@@ -13,6 +13,7 @@ import { ChatArea } from "../components/ChatArea";
 import { ChatInput } from "../components/ChatInput";
 import { ProjectModal } from "../components/ProjectModal";
 import { RenameModal } from "../components/RenameModal";
+import { UserProfileModal } from "../components/UserProfileModal";
 
 export const ChatDashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -34,6 +35,7 @@ export const ChatDashboard: React.FC = () => {
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState<boolean>(false);
   const [conversationToRename, setConversationToRename] = useState<Conversation | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
 
   // Carrega lista inicial de projetos, conversas e modelos disponíveis
   const loadInitialData = useCallback(async () => {
@@ -243,6 +245,7 @@ export const ChatDashboard: React.FC = () => {
         onDeleteConversation={handleDeleteConversation}
         user={user}
         onLogout={logout}
+        onOpenProfileModal={() => setIsProfileModalOpen(true)}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
       />
@@ -296,6 +299,12 @@ export const ChatDashboard: React.FC = () => {
         conversation={conversationToRename}
         projects={projects}
         onSave={handleSaveRename}
+      />
+
+      <UserProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        user={user}
       />
     </div>
   );

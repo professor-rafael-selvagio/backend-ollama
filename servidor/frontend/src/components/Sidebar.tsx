@@ -13,6 +13,7 @@ import {
   FolderInput,
   Layers,
   Sparkles,
+  User as UserIcon,
 } from "lucide-react";
 import { Conversation, Project, User } from "../types";
 
@@ -28,6 +29,7 @@ interface SidebarProps {
   onDeleteConversation: (conversationId: string) => void;
   user: User | null;
   onLogout: () => void;
+  onOpenProfileModal?: () => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
 }
@@ -44,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteConversation,
   user,
   onLogout,
+  onOpenProfileModal,
   isOpenMobile,
   onCloseMobile,
 }) => {
@@ -256,12 +259,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Rodapé / Perfil do Usuário */}
         <div className="p-3 border-t border-slate-800/60 bg-slate-900/60 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 truncate">
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-brand-400 shrink-0">
+          <div
+            onClick={onOpenProfileModal}
+            title="Ver perfil e alterar senha"
+            className="flex items-center gap-2.5 truncate flex-1 mr-2 p-1 -m-1 rounded-xl hover:bg-slate-800/70 transition-colors cursor-pointer group"
+          >
+            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 group-hover:border-brand-500/50 flex items-center justify-center font-bold text-xs text-brand-400 shrink-0 transition-colors">
               {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
             </div>
             <div className="truncate">
-              <p className="text-xs font-medium text-white truncate">
+              <p className="text-xs font-medium text-white group-hover:text-brand-300 transition-colors truncate">
                 {user?.name || "Usuário"}
               </p>
               <p className="text-[11px] text-slate-400 truncate">
@@ -270,13 +277,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onLogout}
-            title="Sair da conta"
-            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-          >
-            <LogOut size={16} />
-          </button>
+          <div className="flex items-center gap-0.5">
+            {onOpenProfileModal && (
+              <button
+                onClick={onOpenProfileModal}
+                title="Área do Usuário / Segurança"
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <UserIcon size={15} />
+              </button>
+            )}
+
+            <button
+              onClick={onLogout}
+              title="Sair da conta"
+              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </aside>
     </>

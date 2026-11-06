@@ -105,6 +105,20 @@ class ApiService {
       );
       return res.data.user;
     },
+
+    changePassword: async (
+      currentPassword: string,
+      newPassword: string
+    ): Promise<{ message: string }> => {
+      const res = await this.request<{ status: string; message: string }>(
+        "/api/auth/change-password",
+        {
+          method: "POST",
+          body: JSON.stringify({ currentPassword, newPassword }),
+        }
+      );
+      return { message: res.message };
+    },
   };
 
   // --- Módulo Ollama ---
