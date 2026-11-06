@@ -37,7 +37,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-ollama_jwt_super_secret_key_change_me_in_prod}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120000}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
       - ALLOWED_MODELS=${ALLOWED_MODELS:-}
       - REQUIRE_AUTH=${REQUIRE_AUTH:-false}
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}

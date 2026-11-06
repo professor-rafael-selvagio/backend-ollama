@@ -40,7 +40,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onSwitchToLogin }) =
             Criar Nova Conta <Sparkles size={18} className="text-amber-400" />
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Cadastre-se para interagir com os modelos de IA e salvar seus projetos
+            Cadastre-se para acessar diferentes modelos de IA
           </p>
         </div>
 
@@ -142,3 +142,4 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onSwitchToLogin }) =
     </div>
   );
 };
+

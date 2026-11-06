@@ -22,7 +22,7 @@ const envSchema = z.object({
     .pipe(z.number().positive()),
   ALLOWED_ORIGINS: z
     .string()
-    .default("http://localhost:5173")
+    .default("*")
     .transform((val) =>
       val
         .split(",")

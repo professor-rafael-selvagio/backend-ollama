@@ -12,3 +12,4 @@ projectRoutes.get("/", defaultProjectController.list);
 projectRoutes.get("/:id", defaultProjectController.getById);
 projectRoutes.patch("/:id", defaultProjectController.update);
 projectRoutes.delete("/:id", defaultProjectController.delete);
+

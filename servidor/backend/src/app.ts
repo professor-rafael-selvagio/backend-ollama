@@ -34,7 +34,7 @@ export function createApp(): Express {
         return callback(new ForbiddenError("Origem não permitida pela política de CORS"), false);
       },
       credentials: true,
-      methods: ["GET", "POST", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
     })
   );

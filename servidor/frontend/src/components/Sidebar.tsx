@@ -342,3 +342,4 @@ const ChatItem: React.FC<ChatItemProps> = ({
     </div>
   );
 };
+
