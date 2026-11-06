@@ -194,6 +194,14 @@ export class InMemoryConversationRepository implements IConversationRepository {
     return Array.from(this.conversations.values());
   }
 
+  public getAllMessages(): DatabaseMessage[] {
+    const all: DatabaseMessage[] = [];
+    for (const list of this.messages.values()) {
+      all.push(...list);
+    }
+    return all;
+  }
+
   public restoreConversation(conversationId: string): boolean {
     const conv = this.conversations.get(conversationId);
     if (!conv || !conv.deleted_at) return false;

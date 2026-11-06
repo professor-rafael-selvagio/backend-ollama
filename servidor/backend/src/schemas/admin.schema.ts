@@ -27,3 +27,16 @@ export const restoreItemSchema = z.object({
 });
 
 export type RestoreItemInput = z.infer<typeof restoreItemSchema>;
+
+/**
+ * Schema de validação para bloqueio ou desbloqueio de usuário
+ */
+export const blockUserSchema = z.object({
+  is_blocked: z.boolean({
+    required_error: "O status de bloqueio (is_blocked) é obrigatório.",
+    invalid_type_error: "O campo is_blocked deve ser booleano.",
+  }),
+});
+
+export type BlockUserInput = z.infer<typeof blockUserSchema>;
+

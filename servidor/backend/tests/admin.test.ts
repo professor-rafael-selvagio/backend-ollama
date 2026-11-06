@@ -342,4 +342,153 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       expect(res.body.message).toContain("Heartbeat");
     });
   });
+
+  describe("PATCH /api/admin/users/:id/block (Bloqueio e Desbloqueio)", () => {
+    it("deve permitir que o admin bloqueie e desbloqueie um usuário comum", async () => {
+      // 1. Admin se cadastra com NIF 1085920
+      const adminReg = await request(app).post("/api/auth/register").send({
+        email: SUPERADMIN_EMAIL,
+        password: "senhaSegura123",
+        name: "Prof. Rafael Selvagio",
+        user_type: "funcionario",
+        nif: "1085920",
+      });
+      const adminToken = adminReg.body.data.session.access_token;
+
+      // 2. Cadastra aluno
+      const userReg = await request(app).post("/api/auth/register").send({
+        email: "bloqueio.aluno@teste.com",
+        password: "senhaSegura123",
+        name: "Aluno Bloqueio",
+        user_type: "aluno",
+        ra: "RA-BLOCK-01",
+      });
+      const targetUserId = userReg.body.data.user.id;
+      const targetToken = userReg.body.data.session.access_token;
+
+      // 3. Admin bloqueia o aluno
+      const blockRes = await request(app)
+        .patch(`/api/admin/users/${targetUserId}/block`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ is_blocked: true });
+
+      expect(blockRes.status).toBe(200);
+      expect(blockRes.body.data.user.is_blocked).toBe(true);
+      expect(blockRes.body.message).toContain("bloqueado com sucesso");
+
+      // 4. Usuário bloqueado tenta login -> 403
+      const loginBlockedRes = await request(app).post("/api/auth/login").send({
+        email: "bloqueio.aluno@teste.com",
+        password: "senhaSegura123",
+      });
+      expect(loginBlockedRes.status).toBe(403);
+      expect(loginBlockedRes.body.message).toContain("bloqueada pelo administrador");
+
+      // 5. Usuário bloqueado tenta usar token ativo -> 403
+      const meBlockedRes = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", `Bearer ${targetToken}`);
+      expect(meBlockedRes.status).toBe(403);
+
+      // 6. Admin desbloqueia o aluno
+      const unblockRes = await request(app)
+        .patch(`/api/admin/users/${targetUserId}/block`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ is_blocked: false });
+
+      expect(unblockRes.status).toBe(200);
+      expect(unblockRes.body.data.user.is_blocked).toBe(false);
+      expect(unblockRes.body.message).toContain("desbloqueado com sucesso");
+
+      // 7. Aluno agora consegue fazer login novamente
+      const loginUnblockedRes = await request(app).post("/api/auth/login").send({
+        email: "bloqueio.aluno@teste.com",
+        password: "senhaSegura123",
+      });
+      expect(loginUnblockedRes.status).toBe(200);
+    });
+
+    it("não deve permitir bloquear o superadministrador rselvagio@sp.senai.br", async () => {
+      const adminReg = await request(app).post("/api/auth/register").send({
+        email: SUPERADMIN_EMAIL,
+        password: "senhaSegura123",
+        name: "Prof. Rafael Selvagio",
+        user_type: "funcionario",
+        nif: "1085920",
+      });
+      const adminToken = adminReg.body.data.session.access_token;
+      const adminId = adminReg.body.data.user.id;
+
+      const res = await request(app)
+        .patch(`/api/admin/users/${adminId}/block`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ is_blocked: true });
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toContain("Não é permitido bloquear o administrador principal");
+    });
+  });
+
+  describe("GET /api/admin/system-resources (Monitoramento do Servidor)", () => {
+    it("deve retornar informações de CPU, memória, disco e uptime para o admin", async () => {
+      const adminReg = await request(app).post("/api/auth/register").send({
+        email: SUPERADMIN_EMAIL,
+        password: "senhaSegura123",
+        name: "Prof. Rafael Selvagio",
+        user_type: "funcionario",
+        nif: "1085920",
+      });
+      const adminToken = adminReg.body.data.session.access_token;
+
+      const res = await request(app)
+        .get("/api/admin/system-resources")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("status", "success");
+      expect(res.body.data).toHaveProperty("cpu");
+      expect(res.body.data.cpu).toHaveProperty("usage_percent");
+      expect(res.body.data.cpu).toHaveProperty("cores");
+      expect(res.body.data.cpu).toHaveProperty("model");
+      expect(res.body.data).toHaveProperty("memory");
+      expect(res.body.data.memory).toHaveProperty("total_bytes");
+      expect(res.body.data.memory).toHaveProperty("used_bytes");
+      expect(res.body.data.memory).toHaveProperty("free_bytes");
+      expect(res.body.data.memory).toHaveProperty("usage_percent");
+      expect(res.body.data).toHaveProperty("disk");
+      expect(res.body.data.disk).toHaveProperty("total_bytes");
+      expect(res.body.data.disk).toHaveProperty("used_bytes");
+      expect(res.body.data.disk).toHaveProperty("free_bytes");
+      expect(res.body.data.disk).toHaveProperty("usage_percent");
+      expect(res.body.data).toHaveProperty("uptime_seconds");
+      expect(res.body.data).toHaveProperty("platform");
+    });
+  });
+
+  describe("GET /api/admin/tokens/analytics (Análise de Consumo de Tokens)", () => {
+    it("deve retornar resumo analítico de tokens com entrada vs saída e histórico", async () => {
+      const adminReg = await request(app).post("/api/auth/register").send({
+        email: SUPERADMIN_EMAIL,
+        password: "senhaSegura123",
+        name: "Prof. Rafael Selvagio",
+        user_type: "funcionario",
+        nif: "1085920",
+      });
+      const adminToken = adminReg.body.data.session.access_token;
+
+      const res = await request(app)
+        .get("/api/admin/tokens/analytics")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("status", "success");
+      expect(res.body.data).toHaveProperty("total_tokens");
+      expect(res.body.data).toHaveProperty("total_prompt_tokens");
+      expect(res.body.data).toHaveProperty("total_completion_tokens");
+      expect(res.body.data).toHaveProperty("prompt_percentage");
+      expect(res.body.data).toHaveProperty("completion_percentage");
+      expect(res.body.data).toHaveProperty("peak_day");
+      expect(Array.isArray(res.body.data.daily_usage)).toBe(true);
+    });
+  });
 });

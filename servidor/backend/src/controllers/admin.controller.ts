@@ -1,5 +1,9 @@
 import { NextFunction, Request, Response } from "express";
-import { restoreItemSchema, updateUserRoleSchema } from "../schemas/admin.schema";
+import {
+  blockUserSchema,
+  restoreItemSchema,
+  updateUserRoleSchema,
+} from "../schemas/admin.schema";
 import { getAdminService, IAdminService } from "../services/admin.service";
 import { UnauthorizedError } from "../utils/errors";
 
@@ -155,6 +159,85 @@ export class AdminController {
         data: {
           logs,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * PATCH /api/admin/users/:id/block
+   * Bloqueia ou desbloqueia o acesso de um usuário
+   */
+  public blockUser = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user?.id) {
+        throw new UnauthorizedError("Usuário não autenticado.");
+      }
+
+      const targetUserId = Array.isArray(req.params.id)
+        ? req.params.id[0]
+        : String(req.params.id);
+      const validated = blockUserSchema.parse(req.body);
+
+      const updatedUser = await this.getService().blockUser(
+        req.user.id,
+        targetUserId,
+        validated.is_blocked
+      );
+
+      res.status(200).json({
+        status: "success",
+        message: validated.is_blocked
+          ? "Usuário bloqueado com sucesso."
+          : "Usuário desbloqueado com sucesso.",
+        data: {
+          user: updatedUser,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * GET /api/admin/system-resources
+   * Retorna o uso de CPU, memória RAM, disco e uptime do servidor
+   */
+  public getSystemResources = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const resources = await this.getService().getSystemResources();
+      res.status(200).json({
+        status: "success",
+        data: resources,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * GET /api/admin/tokens/analytics
+   * Retorna análise de consumo diário de tokens (entrada vs saída) e pico de consumo
+   */
+  public getTokenAnalytics = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const analytics = await this.getService().getTokenAnalytics();
+      res.status(200).json({
+        status: "success",
+        data: analytics,
       });
     } catch (error) {
       next(error);

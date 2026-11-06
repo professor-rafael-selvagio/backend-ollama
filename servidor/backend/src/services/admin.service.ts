@@ -1,3 +1,5 @@
+import os from "os";
+import fs from "fs/promises";
 import { Pool } from "pg";
 import { getDbPool } from "../config/database";
 import { env } from "../config/env";
@@ -6,6 +8,10 @@ import {
   AdminMetricsResponse,
   AdminUserSummary,
   AuditLogEntry,
+  DatabaseMessage,
+  SystemResourcesResponse,
+  TokenAnalyticsResponse,
+  TokenDailyUsage,
 } from "../types";
 import { ForbiddenError, NotFoundError } from "../utils/errors";
 import { getAuditService } from "./audit.service";
@@ -21,6 +27,65 @@ import {
 
 export const SUPERADMIN_EMAIL = "rselvagio@sp.senai.br";
 
+export async function collectSystemResources(): Promise<SystemResourcesResponse> {
+  const cpus = os.cpus();
+  let totalIdle = 0;
+  let totalTick = 0;
+  for (const cpu of cpus) {
+    for (const type of Object.keys(cpu.times)) {
+      totalTick += (cpu.times as Record<string, number>)[type];
+    }
+    totalIdle += cpu.times.idle;
+  }
+  const usagePercent =
+    totalTick > 0 ? Math.round(((totalTick - totalIdle) / totalTick) * 100) : 0;
+
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+  const memPercent = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+
+  let diskTotal = 0;
+  let diskFree = 0;
+  let diskUsed = 0;
+  let diskPercent = 0;
+
+  try {
+    const stat = await fs.statfs("/");
+    diskTotal = stat.bsize * stat.blocks;
+    diskFree = stat.bsize * stat.bavail;
+    diskUsed = diskTotal - diskFree;
+    diskPercent = diskTotal > 0 ? Math.round((diskUsed / diskTotal) * 100) : 0;
+  } catch {
+    // Fallback if statfs fails
+  }
+
+  return {
+    cpu: {
+      usage_percent: usagePercent,
+      cores: cpus.length,
+      model: cpus[0]?.model || "Unknown",
+      load_avg: os.loadavg(),
+    },
+    memory: {
+      total_bytes: totalMem,
+      used_bytes: usedMem,
+      free_bytes: freeMem,
+      usage_percent: memPercent,
+    },
+    disk: {
+      total_bytes: diskTotal,
+      used_bytes: diskUsed,
+      free_bytes: diskFree,
+      usage_percent: diskPercent,
+    },
+    uptime_seconds: Math.floor(os.uptime()),
+    platform: `${os.type()} ${os.release()} (${os.arch()})`,
+    hostname: os.hostname(),
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export interface IAdminService {
   getMetrics(): Promise<AdminMetricsResponse>;
   getUsers(): Promise<AdminUserSummary[]>;
@@ -29,12 +94,19 @@ export interface IAdminService {
     targetUserId: string,
     isAdmin: boolean
   ): Promise<AdminUserSummary>;
+  blockUser(
+    adminUserId: string,
+    targetUserId: string,
+    isBlocked: boolean
+  ): Promise<AdminUserSummary>;
   getDeletedItems(): Promise<AdminDeletedItem[]>;
   restoreItem(
     resourceType: "conversation" | "project",
     resourceId: string
   ): Promise<{ success: boolean; message: string }>;
   getAuditLogs(limit?: number, offset?: number): Promise<AuditLogEntry[]>;
+  getSystemResources(): Promise<SystemResourcesResponse>;
+  getTokenAnalytics(): Promise<TokenAnalyticsResponse>;
 }
 
 /**
@@ -114,6 +186,7 @@ export class PostgresAdminService implements IAdminService {
          u.ra,
          u.cpf,
          u.nif,
+         u.is_blocked,
          u.deleted_at,
          u.is_admin,
          u.created_at,
@@ -126,7 +199,7 @@ export class PostgresAdminService implements IAdminService {
        FROM auth.users u
        LEFT JOIN public.conversations c ON c.user_id = u.id
        LEFT JOIN public.messages m ON m.user_id = u.id
-       GROUP BY u.id, u.email, u.raw_user_meta_data, u.user_type, u.ra, u.cpf, u.nif, u.deleted_at, u.is_admin, u.created_at, u.last_seen_at
+       GROUP BY u.id, u.email, u.raw_user_meta_data, u.user_type, u.ra, u.cpf, u.nif, u.is_blocked, u.deleted_at, u.is_admin, u.created_at, u.last_seen_at
        ORDER BY (u.last_seen_at >= now() - interval '3 minutes') DESC, u.created_at DESC`
     );
 
@@ -145,6 +218,7 @@ export class PostgresAdminService implements IAdminService {
         cpf: row.cpf || undefined,
         nif: row.nif || undefined,
         is_admin: isAdmin,
+        is_blocked: Boolean(row.is_blocked),
         is_online: Boolean(row.is_online),
         last_seen_at: row.last_seen_at ? new Date(row.last_seen_at).toISOString() : new Date().toISOString(),
         created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
@@ -200,6 +274,113 @@ export class PostgresAdminService implements IAdminService {
       throw new NotFoundError("Erro ao recuperar usuário atualizado.");
     }
     return updated;
+  }
+
+  public async blockUser(
+    adminUserId: string,
+    targetUserId: string,
+    isBlocked: boolean
+  ): Promise<AdminUserSummary> {
+    const userCheck = await this.pool.query(
+      "SELECT id, email, is_blocked FROM auth.users WHERE id = $1 LIMIT 1",
+      [targetUserId]
+    );
+
+    if (!userCheck.rowCount || userCheck.rowCount === 0) {
+      throw new NotFoundError("Usuário alvo não encontrado.");
+    }
+
+    const targetUser = userCheck.rows[0];
+    if (
+      targetUser.email?.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase() &&
+      isBlocked
+    ) {
+      throw new ForbiddenError(
+        `Não é permitido bloquear o administrador principal (${SUPERADMIN_EMAIL}).`
+      );
+    }
+
+    await this.pool.query(
+      "UPDATE auth.users SET is_blocked = $1, updated_at = now() WHERE id = $2",
+      [isBlocked, targetUserId]
+    );
+
+    await getAuditService().log({
+      userId: adminUserId,
+      action: isBlocked ? "USER_BLOCK" : "USER_UNBLOCK",
+      resourceType: "user",
+      resourceId: targetUserId,
+      details: { targetEmail: targetUser.email, is_blocked: isBlocked },
+    });
+
+    const allUsers = await this.getUsers();
+    const updated = allUsers.find((u) => u.id === targetUserId);
+    if (!updated) {
+      throw new NotFoundError("Erro ao recuperar usuário atualizado.");
+    }
+    return updated;
+  }
+
+  public async getSystemResources(): Promise<SystemResourcesResponse> {
+    return collectSystemResources();
+  }
+
+  public async getTokenAnalytics(): Promise<TokenAnalyticsResponse> {
+    const res = await this.pool.query(
+      `SELECT 
+         to_char(created_at, 'YYYY-MM-DD') as date,
+         count(*)::int as messages_count,
+         coalesce(sum(prompt_tokens), 0)::int as prompt_tokens,
+         coalesce(sum(coalesce(completion_tokens, tokens, 0)), 0)::int as completion_tokens
+       FROM public.messages
+       WHERE deleted_at IS NULL
+       GROUP BY to_char(created_at, 'YYYY-MM-DD')
+       ORDER BY date ASC`
+    );
+
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let peakDay: { date: string; total_tokens: number } | null = null;
+
+    const dailyUsage = res.rows.map((row) => {
+      const prompt = Number(row.prompt_tokens) || 0;
+      const completion = Number(row.completion_tokens) || 0;
+      const total = prompt + completion;
+      const count = Number(row.messages_count) || 0;
+
+      totalPromptTokens += prompt;
+      totalCompletionTokens += completion;
+
+      if (!peakDay || total > peakDay.total_tokens) {
+        if (total > 0) {
+          peakDay = { date: row.date, total_tokens: total };
+        }
+      }
+
+      return {
+        date: row.date,
+        prompt_tokens: prompt,
+        completion_tokens: completion,
+        total_tokens: total,
+        messages_count: count,
+      };
+    });
+
+    const totalTokens = totalPromptTokens + totalCompletionTokens;
+    const promptPercentage =
+      totalTokens > 0 ? Math.round((totalPromptTokens / totalTokens) * 100) : 0;
+    const completionPercentage =
+      totalTokens > 0 ? Math.round((totalCompletionTokens / totalTokens) * 100) : 0;
+
+    return {
+      total_tokens: totalTokens,
+      total_prompt_tokens: totalPromptTokens,
+      total_completion_tokens: totalCompletionTokens,
+      prompt_percentage: promptPercentage,
+      completion_percentage: completionPercentage,
+      peak_day: peakDay,
+      daily_usage: dailyUsage,
+    };
   }
 
   public async getDeletedItems(): Promise<AdminDeletedItem[]> {
@@ -378,6 +559,7 @@ export class InMemoryAdminService implements IAdminService {
         cpf: u.cpf,
         nif: u.nif,
         is_admin: isAdmin,
+        is_blocked: Boolean(u.is_blocked),
         is_online: isOnline,
         last_seen_at: u.last_seen_at || new Date().toISOString(),
         created_at: u.created_at || new Date().toISOString(),
@@ -423,6 +605,116 @@ export class InMemoryAdminService implements IAdminService {
 
     const all = await this.getUsers();
     return all.find((u) => u.id === targetUserId)!;
+  }
+
+  public async blockUser(
+    adminUserId: string,
+    targetUserId: string,
+    isBlocked: boolean
+  ): Promise<AdminUserSummary> {
+    const users = this.inMemoryAuth.getUsersList();
+    const targetUser = users.find((u) => u.id === targetUserId);
+
+    if (!targetUser) {
+      throw new NotFoundError("Usuário alvo não encontrado.");
+    }
+
+    if (
+      targetUser.email.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase() &&
+      isBlocked
+    ) {
+      throw new ForbiddenError(
+        `Não é permitido bloquear o administrador principal (${SUPERADMIN_EMAIL}).`
+      );
+    }
+
+    this.inMemoryAuth.setUserBlocked(targetUserId, isBlocked);
+
+    await getAuditService().log({
+      userId: adminUserId,
+      action: isBlocked ? "USER_BLOCK" : "USER_UNBLOCK",
+      resourceType: "user",
+      resourceId: targetUserId,
+      details: { targetEmail: targetUser.email, is_blocked: isBlocked },
+    });
+
+    const all = await this.getUsers();
+    return all.find((u) => u.id === targetUserId)!;
+  }
+
+  public async getSystemResources(): Promise<SystemResourcesResponse> {
+    return collectSystemResources();
+  }
+
+  public async getTokenAnalytics(): Promise<TokenAnalyticsResponse> {
+    const repo = defaultConversationService.getRepository();
+    let messages: DatabaseMessage[] = [];
+    if (repo instanceof InMemoryConversationRepository) {
+      messages = repo.getAllMessages();
+    }
+
+    const dateMap = new Map<
+      string,
+      { prompt: number; completion: number; count: number }
+    >();
+
+    for (const msg of messages) {
+      const dateStr = (msg.created_at || new Date().toISOString()).slice(0, 10);
+      const current = dateMap.get(dateStr) || {
+        prompt: 0,
+        completion: 0,
+        count: 0,
+      };
+      current.prompt +=
+        msg.prompt_tokens ?? (msg.role === "user" ? msg.tokens ?? 0 : 0);
+      current.completion +=
+        msg.completion_tokens ?? (msg.role === "assistant" ? msg.tokens ?? 0 : 0);
+      current.count++;
+      dateMap.set(dateStr, current);
+    }
+
+    const dailyUsage: TokenDailyUsage[] = [];
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let peakDay: { date: string; total_tokens: number } | null = null;
+
+    const sortedDates = Array.from(dateMap.keys()).sort();
+    for (const date of sortedDates) {
+      const item = dateMap.get(date)!;
+      const total = item.prompt + item.completion;
+      totalPromptTokens += item.prompt;
+      totalCompletionTokens += item.completion;
+
+      if (!peakDay || total > peakDay.total_tokens) {
+        if (total > 0) {
+          peakDay = { date, total_tokens: total };
+        }
+      }
+
+      dailyUsage.push({
+        date,
+        prompt_tokens: item.prompt,
+        completion_tokens: item.completion,
+        total_tokens: total,
+        messages_count: item.count,
+      });
+    }
+
+    const totalTokens = totalPromptTokens + totalCompletionTokens;
+    const promptPercentage =
+      totalTokens > 0 ? Math.round((totalPromptTokens / totalTokens) * 100) : 0;
+    const completionPercentage =
+      totalTokens > 0 ? Math.round((totalCompletionTokens / totalTokens) * 100) : 0;
+
+    return {
+      total_tokens: totalTokens,
+      total_prompt_tokens: totalPromptTokens,
+      total_completion_tokens: totalCompletionTokens,
+      prompt_percentage: promptPercentage,
+      completion_percentage: completionPercentage,
+      peak_day: peakDay,
+      daily_usage: dailyUsage,
+    };
   }
 
   public async getDeletedItems(): Promise<AdminDeletedItem[]> {

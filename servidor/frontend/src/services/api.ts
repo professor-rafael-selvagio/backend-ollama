@@ -9,6 +9,8 @@ import {
   OllamaModel,
   Project,
   Session,
+  SystemResources,
+  TokenAnalytics,
   User,
 } from "../types";
 
@@ -180,6 +182,28 @@ class ApiService {
         }
       );
       return res.data.user;
+    },
+    blockUser: async (userId: string, isBlocked: boolean): Promise<AdminUser> => {
+      const res = await this.request<{ status: string; data: { user: AdminUser } }>(
+        `/api/admin/users/${userId}/block`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ is_blocked: isBlocked }),
+        }
+      );
+      return res.data.user;
+    },
+    getSystemResources: async (): Promise<SystemResources> => {
+      const res = await this.request<{ status: string; data: SystemResources }>(
+        "/api/admin/system-resources"
+      );
+      return res.data;
+    },
+    getTokenAnalytics: async (): Promise<TokenAnalytics> => {
+      const res = await this.request<{ status: string; data: TokenAnalytics }>(
+        "/api/admin/tokens/analytics"
+      );
+      return res.data;
     },
     getDeleted: async (): Promise<AdminDeletedItem[]> => {
       const res = await this.request<{ status: string; data: { items: AdminDeletedItem[] } }>(

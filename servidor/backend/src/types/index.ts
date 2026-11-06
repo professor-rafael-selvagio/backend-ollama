@@ -93,6 +93,7 @@ export interface AuthUser {
   cpf?: string;
   nif?: string;
   is_admin?: boolean;
+  is_blocked?: boolean;
   last_seen_at?: string;
   deleted_at?: string | null;
   app_metadata?: Record<string, unknown>;
@@ -151,6 +152,7 @@ export interface AdminUserSummary {
   cpf?: string;
   nif?: string;
   is_admin: boolean;
+  is_blocked?: boolean;
   is_online: boolean;
   last_seen_at: string;
   created_at: string;
@@ -205,6 +207,62 @@ export interface RestoreItemInput {
 
 export interface UpdateUserRoleInput {
   is_admin: boolean;
+}
+
+export interface BlockUserInput {
+  is_blocked: boolean;
+}
+
+export interface SystemCpuInfo {
+  usage_percent: number;
+  cores: number;
+  model: string;
+  load_avg: number[];
+}
+
+export interface SystemMemoryInfo {
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  usage_percent: number;
+}
+
+export interface SystemDiskInfo {
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  usage_percent: number;
+}
+
+export interface SystemResourcesResponse {
+  cpu: SystemCpuInfo;
+  memory: SystemMemoryInfo;
+  disk: SystemDiskInfo;
+  uptime_seconds: number;
+  platform: string;
+  hostname: string;
+  timestamp: string;
+}
+
+export interface TokenDailyUsage {
+  date: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  messages_count: number;
+}
+
+export interface TokenAnalyticsResponse {
+  total_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  prompt_percentage: number;
+  completion_percentage: number;
+  peak_day: {
+    date: string;
+    total_tokens: number;
+  } | null;
+  daily_usage: TokenDailyUsage[];
 }
 
 declare global {

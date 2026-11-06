@@ -17,6 +17,9 @@ adminRoutes.get("/users", defaultAdminController.getUsers);
 // Alteração de permissão administrativa de um usuário
 adminRoutes.patch("/users/:id/role", defaultAdminController.updateUserRole);
 
+// Bloqueio ou desbloqueio de acesso de um usuário
+adminRoutes.patch("/users/:id/block", defaultAdminController.blockUser);
+
 // Aba exclusiva da Lixeira: Itens excluídos logicamente
 adminRoutes.get("/deleted", defaultAdminController.getDeleted);
 
@@ -25,3 +28,9 @@ adminRoutes.post("/restore", defaultAdminController.restoreItem);
 
 // Histórico de auditoria do sistema
 adminRoutes.get("/audit-logs", defaultAdminController.getAuditLogs);
+
+// Monitoramento de recursos do servidor (CPU, memória, disco, uptime)
+adminRoutes.get("/system-resources", defaultAdminController.getSystemResources);
+
+// Análise detalhada de consumo de tokens (entrada vs saída e pico)
+adminRoutes.get("/tokens/analytics", defaultAdminController.getTokenAnalytics);

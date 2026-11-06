@@ -3,7 +3,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { getAuthService } from "../services/auth.service";
-import { UnauthorizedError } from "../utils/errors";
+import { ForbiddenError, UnauthorizedError } from "../utils/errors";
 import { logger } from "../utils/logger";
 
 let supabaseClient: SupabaseClient | null = null;
@@ -118,12 +118,18 @@ export async function authMiddleware(
         decoded.email?.toLowerCase() === "rselvagio@sp.senai.br"
       );
 
+      const profile = await getAuthService().getProfile(decoded.sub).catch(() => null);
+      if (profile?.is_blocked) {
+        return next(new ForbiddenError("Sua conta de usuário foi bloqueada pelo administrador."));
+      }
+
       req.user = {
         id: decoded.sub,
         email: decoded.email,
         name: decoded.name || undefined,
         role: decoded.role || "authenticated",
         is_admin: isAdmin,
+        is_blocked: Boolean(profile?.is_blocked),
         user_metadata: { name: decoded.name },
       };
 
@@ -161,6 +167,7 @@ export async function authMiddleware(
   let ra: string | undefined = undefined;
   let cpf: string | undefined = undefined;
   let nif: string | undefined = undefined;
+  let isBlocked = false;
   let isAdmin = Boolean(
     fallbackEmail.toLowerCase() === "rselvagio@sp.senai.br" ||
     req.headers["x-test-is-admin"] === "true"
@@ -169,19 +176,26 @@ export async function authMiddleware(
   try {
     const profile = await getAuthService().getProfile(fallbackId);
     if (profile) {
+      if (profile.is_blocked) {
+        return next(new ForbiddenError("Sua conta de usuário foi bloqueada pelo administrador."));
+      }
       fallbackEmail = profile.email || fallbackEmail;
       fallbackName = profile.name;
       userType = profile.user_type;
       ra = profile.ra;
       cpf = profile.cpf;
       nif = profile.nif;
+      isBlocked = Boolean(profile.is_blocked);
       isAdmin = Boolean(
         profile.is_admin ||
         fallbackEmail.toLowerCase() === "rselvagio@sp.senai.br" ||
         req.headers["x-test-is-admin"] === "true"
       );
     }
-  } catch {
+  } catch (err: unknown) {
+    if (err instanceof ForbiddenError) {
+      return next(err);
+    }
     // Mantém fallback inicial
   }
 
@@ -195,6 +209,7 @@ export async function authMiddleware(
     nif,
     role: "authenticated",
     is_admin: isAdmin,
+    is_blocked: isBlocked,
   };
 
   try {

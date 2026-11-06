@@ -26,8 +26,22 @@ import {
   FileText,
   FolderKanban,
   Check,
+  Server,
+  HardDrive,
+  Ban,
+  Unlock,
+  TrendingUp,
+  BarChart2,
+  X,
 } from "lucide-react";
-import { AdminDeletedItem, AdminMetrics, AdminUser, AuditLogEntry } from "../types";
+import {
+  AdminDeletedItem,
+  AdminMetrics,
+  AdminUser,
+  AuditLogEntry,
+  SystemResources,
+  TokenAnalytics,
+} from "../types";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -39,18 +53,30 @@ const SUPERADMIN_EMAIL = "rselvagio@sp.senai.br";
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) => {
   const { user, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "trash" | "audit">("overview");
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "users" | "trash" | "audit" | "resources"
+  >("overview");
 
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [deletedItems, setDeletedItems] = useState<AdminDeletedItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
 
+  const [systemResources, setSystemResources] = useState<SystemResources | null>(null);
+  const [isLoadingResources, setIsLoadingResources] = useState(false);
+
+  const [tokenAnalytics, setTokenAnalytics] = useState<TokenAnalytics | null>(null);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "online" | "admins" | "alunos" | "funcionarios">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "online" | "admins" | "alunos" | "funcionarios" | "bloqueados"
+  >("all");
   const [actionUserId, setActionUserId] = useState<string | null>(null);
+  const [blockingUserId, setBlockingUserId] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{
     type: "success" | "error";
@@ -184,6 +210,117 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
     }
   };
 
+  const loadSystemResources = async (silent = false) => {
+    if (!silent) setIsLoadingResources(true);
+    try {
+      const res = await api.admin.getSystemResources();
+      setSystemResources(res);
+    } catch (err: unknown) {
+      if (!silent) {
+        setNotification({
+          type: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Erro ao carregar recursos do servidor.",
+        });
+      }
+    } finally {
+      setIsLoadingResources(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin && activeTab === "resources") {
+      loadSystemResources();
+      const interval = setInterval(() => {
+        loadSystemResources(true);
+      }, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [isAdmin, activeTab]);
+
+  const handleOpenTokenAnalytics = async () => {
+    setIsTokenModalOpen(true);
+    setIsLoadingTokens(true);
+    try {
+      const data = await api.admin.getTokenAnalytics();
+      setTokenAnalytics(data);
+    } catch (err: unknown) {
+      setNotification({
+        type: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Erro ao carregar análise de tokens.",
+      });
+    } finally {
+      setIsLoadingTokens(false);
+    }
+  };
+
+  const handleToggleBlockUser = async (targetUser: AdminUser) => {
+    if (targetUser.email.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase()) {
+      setNotification({
+        type: "error",
+        message: `Não é permitido bloquear o Administrador Principal (${SUPERADMIN_EMAIL}).`,
+      });
+      return;
+    }
+
+    const shouldBlock = !targetUser.is_blocked;
+    const actionVerb = shouldBlock ? "bloquear o acesso de" : "desbloquear o acesso de";
+    const confirmPrompt = window.confirm(
+      `Deseja realmente ${actionVerb} ${targetUser.name || targetUser.email}? ${
+        shouldBlock
+          ? "O usuário perderá o acesso imediato ao sistema."
+          : "O usuário poderá voltar a acessar normalmente."
+      }`
+    );
+
+    if (!confirmPrompt) return;
+
+    setBlockingUserId(targetUser.id);
+    setNotification(null);
+
+    try {
+      const updated = await api.admin.blockUser(targetUser.id, shouldBlock);
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setNotification({
+        type: "success",
+        message: shouldBlock
+          ? `Usuário ${targetUser.name || targetUser.email} foi bloqueado com sucesso!`
+          : `Usuário ${targetUser.name || targetUser.email} foi desbloqueado com sucesso!`,
+      });
+      loadData(true);
+    } catch (err: unknown) {
+      setNotification({
+        type: "error",
+        message:
+          err instanceof Error ? err.message : "Erro ao alterar bloqueio do usuário.",
+      });
+    } finally {
+      setBlockingUserId(null);
+    }
+  };
+
+  const formatBytesGB = (bytes: number = 0) => {
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  };
+
+  const formatUptime = (seconds: number = 0) => {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0 || days > 0) parts.push(`${hours}h`);
+    if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+    parts.push(`${secs}s`);
+    return parts.join(" ");
+  };
+
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       const query = searchQuery.toLowerCase().trim();
@@ -200,6 +337,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
       if (statusFilter === "admins") return u.is_admin;
       if (statusFilter === "alunos") return (u.user_type || "aluno") === "aluno";
       if (statusFilter === "funcionarios") return u.user_type === "funcionario";
+      if (statusFilter === "bloqueados") return Boolean(u.is_blocked);
       return true;
     });
   }, [users, searchQuery, statusFilter]);
@@ -345,6 +483,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
             <History size={15} />
             Trilha de Auditoria ({auditLogs.length})
           </button>
+
+          <button
+            onClick={() => setActiveTab("resources")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+              activeTab === "resources"
+                ? "bg-brand-600 text-white shadow-md shadow-brand-600/20"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+            }`}
+          >
+            <Server size={15} />
+            Recursos do Servidor
+          </button>
         </div>
       </div>
 
@@ -379,39 +529,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
         {/* ABA 1: VISÃO GERAL */}
         {activeTab === "overview" && (
           <div className="space-y-6">
-            {/* Cards de Métricas Principais */}
+            {/* Cards de Métricas Principais (Clicáveis) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Total de Usuários */}
-              <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-sm">
+              <div
+                onClick={() => {
+                  setActiveTab("users");
+                  setStatusFilter("all");
+                }}
+                className="bg-slate-900/60 border border-slate-800/80 hover:border-blue-500/50 hover:bg-slate-900/90 rounded-2xl p-5 backdrop-blur-sm cursor-pointer transition-all group"
+                title="Clique para gerenciar usuários cadastrados"
+              >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <span className="text-xs font-semibold text-slate-400 group-hover:text-blue-300 uppercase tracking-wider transition-colors">
                     Usuários Cadastrados
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform">
                     <Users size={16} />
                   </div>
                 </div>
                 <div className="text-2xl font-bold text-white">
                   {formatNumber(metrics?.total_users)}
                 </div>
-                <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-                  <span className="inline-flex items-center gap-1 text-sky-400">
-                    <GraduationCap size={12} /> {metrics?.total_alunos || 0} Alunos
-                  </span>
-                  <span>•</span>
-                  <span className="inline-flex items-center gap-1 text-purple-400">
-                    <Briefcase size={12} /> {metrics?.total_funcionarios || 0} Funcs
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-sky-400">
+                      <GraduationCap size={12} /> {metrics?.total_alunos || 0} Alunos
+                    </span>
+                    <span>•</span>
+                    <span className="inline-flex items-center gap-1 text-purple-400">
+                      <Briefcase size={12} /> {metrics?.total_funcionarios || 0} Funcs
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-blue-400 group-hover:translate-x-0.5 transition-transform font-medium">
+                    Ver todos →
                   </span>
                 </div>
               </div>
 
               {/* Usuários Online */}
-              <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-sm">
+              <div
+                onClick={() => {
+                  setActiveTab("users");
+                  setStatusFilter("online");
+                }}
+                className="bg-slate-900/60 border border-slate-800/80 hover:border-emerald-500/50 hover:bg-slate-900/90 rounded-2xl p-5 backdrop-blur-sm cursor-pointer transition-all group"
+                title="Clique para ver os usuários online agora"
+              >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <span className="text-xs font-semibold text-slate-400 group-hover:text-emerald-300 uppercase tracking-wider transition-colors">
                     Online Agora
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
                     <Activity size={16} />
                   </div>
                 </div>
@@ -422,52 +591,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
                   </span>
                   {formatNumber(metrics?.online_users)}
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  Usuários ativos nos últimos 3 minutos
-                </p>
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                  <p className="text-[11px] text-slate-500">
+                    Ativos nos últimos 3 min
+                  </p>
+                  <span className="text-[10px] text-emerald-400 group-hover:translate-x-0.5 transition-transform font-medium">
+                    Filtrar online →
+                  </span>
+                </div>
               </div>
 
               {/* Tokens Consumidos */}
-              <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-sm">
+              <div
+                onClick={handleOpenTokenAnalytics}
+                className="bg-slate-900/60 border border-slate-800/80 hover:border-brand-500/50 hover:bg-slate-900/90 rounded-2xl p-5 backdrop-blur-sm cursor-pointer transition-all group"
+                title="Clique para ver gráficos de entrada vs saída e dia de pico"
+              >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <span className="text-xs font-semibold text-slate-400 group-hover:text-brand-300 uppercase tracking-wider transition-colors">
                     Tokens Totais
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center">
-                    <Cpu size={16} />
+                  <div className="w-8 h-8 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <BarChart2 size={16} />
                   </div>
                 </div>
                 <div className="text-2xl font-bold text-white">
                   {formatNumber(metrics?.total_tokens)}
                 </div>
-                <div className="mt-2 text-xs text-slate-400 flex items-center gap-2">
-                  <span title="Tokens de Entrada (Prompt)">
-                    Entrada: {formatNumber(metrics?.total_prompt_tokens)}
-                  </span>
-                  <span>•</span>
-                  <span title="Tokens de Saída (Geração)">
-                    Saída: {formatNumber(metrics?.total_completion_tokens)}
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span title="Tokens de Entrada (Prompt)" className="text-indigo-300">
+                      Entrada: {formatNumber(metrics?.total_prompt_tokens)}
+                    </span>
+                    <span>•</span>
+                    <span title="Tokens de Saída (Geração)" className="text-brand-400">
+                      Saída: {formatNumber(metrics?.total_completion_tokens)}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-brand-400 group-hover:translate-x-0.5 transition-transform font-medium">
+                    Gráficos →
                   </span>
                 </div>
               </div>
 
               {/* Lixeira do Sistema */}
-              <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-sm">
+              <div
+                onClick={() => setActiveTab("trash")}
+                className="bg-slate-900/60 border border-slate-800/80 hover:border-amber-500/50 hover:bg-slate-900/90 rounded-2xl p-5 backdrop-blur-sm cursor-pointer transition-all group"
+                title="Clique para abrir a lixeira do sistema"
+              >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <span className="text-xs font-semibold text-slate-400 group-hover:text-amber-300 uppercase tracking-wider transition-colors">
                     Itens na Lixeira
                   </span>
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
                     <Trash2 size={16} />
                   </div>
                 </div>
                 <div className="text-2xl font-bold text-amber-400">
                   {formatNumber(deletedItems.length)}
                 </div>
-                <div className="mt-2 text-xs text-slate-400 flex items-center gap-2">
-                  <span>{metrics?.deleted_conversations || 0} Chats</span>
-                  <span>•</span>
-                  <span>{metrics?.deleted_projects || 0} Projetos</span>
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <span>{metrics?.deleted_conversations || 0} Chats</span>
+                    <span>•</span>
+                    <span>{metrics?.deleted_projects || 0} Projetos</span>
+                  </div>
+                  <span className="text-[10px] text-amber-400 group-hover:translate-x-0.5 transition-transform font-medium">
+                    Abrir lixeira →
+                  </span>
                 </div>
               </div>
             </div>
@@ -564,6 +756,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
                 >
                   Funcionários
                 </button>
+                <button
+                  onClick={() => setStatusFilter("bloqueados")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                    statusFilter === "bloqueados"
+                      ? "bg-red-600 text-white"
+                      : "bg-slate-800 text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Bloqueados ({users.filter((u) => u.is_blocked).length})
+                </button>
               </div>
             </div>
 
@@ -579,7 +781,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
                       <th className="py-3 px-4">Status / Último Acesso</th>
                       <th className="py-3 px-4">Tokens Entrada / Saída</th>
                       <th className="py-3 px-4 text-center">Permissão Admin</th>
-                      <th className="py-3 px-4 text-right">Ação</th>
+                      <th className="py-3 px-4 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -641,17 +843,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
 
                             {/* Status */}
                             <td className="py-3.5 px-4">
-                              <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`w-2 h-2 rounded-full ${
-                                    u.is_online
-                                      ? "bg-emerald-400 ring-2 ring-emerald-500/30"
-                                      : "bg-slate-600"
-                                  }`}
-                                />
-                                <span className={u.is_online ? "text-emerald-400 font-medium" : "text-slate-400"}>
-                                  {formatLastSeen(u.last_seen_at, u.is_online)}
-                                </span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {u.is_blocked ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/20 border border-red-500/40 text-red-300">
+                                    <Ban size={10} /> Bloqueado
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      className={`w-2 h-2 rounded-full ${
+                                        u.is_online
+                                          ? "bg-emerald-400 ring-2 ring-emerald-500/30"
+                                          : "bg-slate-600"
+                                      }`}
+                                    />
+                                    <span className={u.is_online ? "text-emerald-400 font-medium" : "text-slate-400"}>
+                                      {formatLastSeen(u.last_seen_at, u.is_online)}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </td>
 
@@ -678,27 +888,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
                               )}
                             </td>
 
-                            {/* Ação */}
+                            {/* Ações */}
                             <td className="py-3.5 px-4 text-right">
                               {isSuperAdmin ? (
                                 <span className="text-[10px] text-brand-400/80 font-medium">
                                   Superadmin
                                 </span>
                               ) : (
-                                <button
-                                  onClick={() => handleToggleAdminRole(u)}
-                                  disabled={actionUserId === u.id}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                                    u.is_admin
-                                      ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
-                                      : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
-                                  }`}
-                                >
-                                  {actionUserId === u.id ? (
-                                    <RefreshCw size={12} className="animate-spin inline mr-1" />
-                                  ) : null}
-                                  {u.is_admin ? "Revogar Admin" : "Tornar Admin"}
-                                </button>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleToggleAdminRole(u)}
+                                    disabled={actionUserId === u.id || blockingUserId === u.id}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                                      u.is_admin
+                                        ? "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
+                                        : "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700"
+                                    }`}
+                                  >
+                                    {actionUserId === u.id ? (
+                                      <RefreshCw size={12} className="animate-spin inline mr-1" />
+                                    ) : null}
+                                    {u.is_admin ? "Revogar Admin" : "Tornar Admin"}
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleToggleBlockUser(u)}
+                                    disabled={blockingUserId === u.id || actionUserId === u.id}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                                      u.is_blocked
+                                        ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                        : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                                    }`}
+                                    title={u.is_blocked ? "Desbloquear acesso do usuário" : "Bloquear acesso do usuário"}
+                                  >
+                                    {blockingUserId === u.id ? (
+                                      <RefreshCw size={12} className="animate-spin inline" />
+                                    ) : u.is_blocked ? (
+                                      <Unlock size={12} />
+                                    ) : (
+                                      <Ban size={12} />
+                                    )}
+                                    <span>{u.is_blocked ? "Desbloquear" : "Bloquear"}</span>
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -885,7 +1117,474 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
             </div>
           </div>
         )}
+
+        {/* ABA 5: RECURSOS DO SERVIDOR */}
+        {activeTab === "resources" && (
+          <div className="space-y-6">
+            {/* Topo / Status */}
+            <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Server size={18} className="text-brand-400" />
+                  Monitoramento de Recursos do Servidor
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Consumo de processamento (CPU), memória RAM e armazenamento no host em tempo real.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                  </span>
+                  <span className="text-emerald-400 font-medium">Tempo Real (4s)</span>
+                </div>
+                <button
+                  onClick={() => loadSystemResources()}
+                  disabled={isLoadingResources}
+                  className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw size={12} className={isLoadingResources ? "animate-spin" : ""} />
+                  Atualizar
+                </button>
+              </div>
+            </div>
+
+            {isLoadingResources && !systemResources ? (
+              <div className="py-20 text-center text-slate-400 flex flex-col items-center gap-2">
+                <RefreshCw size={28} className="animate-spin text-brand-400" />
+                <p className="text-xs">Lendo sensores do servidor...</p>
+              </div>
+            ) : systemResources ? (
+              <div className="space-y-6">
+                {/* Grid de Métricas de Hardware */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {/* Card CPU */}
+                  <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                            <Cpu size={16} />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                            Processamento (CPU)
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          {systemResources.cpu.cores} núcleos
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline gap-2 mb-3">
+                        <div
+                          className={`text-3xl font-extrabold ${
+                            systemResources.cpu.usage_percent >= 85
+                              ? "text-red-400"
+                              : systemResources.cpu.usage_percent >= 60
+                              ? "text-amber-400"
+                              : "text-emerald-400"
+                          }`}
+                        >
+                          {systemResources.cpu.usage_percent}%
+                        </div>
+                        <span className="text-xs text-slate-400">em uso</span>
+                      </div>
+
+                      {/* Barra de Progresso */}
+                      <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden mb-4">
+                        <div
+                          style={{ width: `${Math.min(100, systemResources.cpu.usage_percent)}%` }}
+                          className={`h-full transition-all duration-500 ${
+                            systemResources.cpu.usage_percent >= 85
+                              ? "bg-red-500"
+                              : systemResources.cpu.usage_percent >= 60
+                              ? "bg-amber-500"
+                              : "bg-emerald-500"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800/80 space-y-1.5 text-xs text-slate-400">
+                      <div className="flex justify-between">
+                        <span>Modelo:</span>
+                        <span
+                          className="text-slate-200 font-medium truncate max-w-[170px]"
+                          title={systemResources.cpu.model}
+                        >
+                          {systemResources.cpu.model}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Carga (1m / 5m / 15m):</span>
+                        <span className="text-slate-200 font-mono">
+                          {systemResources.cpu.load_avg.map((v) => v.toFixed(2)).join(" / ")}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Memória RAM */}
+                  <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
+                            <Zap size={16} />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                            Memória RAM
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          Total: {formatBytesGB(systemResources.memory.total_bytes)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline gap-2 mb-3">
+                        <div
+                          className={`text-3xl font-extrabold ${
+                            systemResources.memory.usage_percent >= 85
+                              ? "text-red-400"
+                              : systemResources.memory.usage_percent >= 70
+                              ? "text-amber-400"
+                              : "text-purple-400"
+                          }`}
+                        >
+                          {systemResources.memory.usage_percent}%
+                        </div>
+                        <span className="text-xs text-slate-400">
+                          ({formatBytesGB(systemResources.memory.used_bytes)} usada)
+                        </span>
+                      </div>
+
+                      {/* Barra de Progresso */}
+                      <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden mb-4">
+                        <div
+                          style={{
+                            width: `${Math.min(100, systemResources.memory.usage_percent)}%`,
+                          }}
+                          className={`h-full transition-all duration-500 ${
+                            systemResources.memory.usage_percent >= 85
+                              ? "bg-red-500"
+                              : systemResources.memory.usage_percent >= 70
+                              ? "bg-amber-500"
+                              : "bg-purple-500"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800/80 space-y-1.5 text-xs text-slate-400">
+                      <div className="flex justify-between">
+                        <span>Memória Livre:</span>
+                        <span className="text-emerald-400 font-medium">
+                          {formatBytesGB(systemResources.memory.free_bytes)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Memória Alocada:</span>
+                        <span className="text-slate-200 font-medium">
+                          {formatBytesGB(systemResources.memory.used_bytes)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Armazenamento (Disco) */}
+                  <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+                            <HardDrive size={16} />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                            Disco / Armazenamento
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          Total: {formatBytesGB(systemResources.disk.total_bytes)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline gap-2 mb-3">
+                        <div
+                          className={`text-3xl font-extrabold ${
+                            systemResources.disk.usage_percent >= 90
+                              ? "text-red-400"
+                              : systemResources.disk.usage_percent >= 75
+                              ? "text-amber-400"
+                              : "text-amber-300"
+                          }`}
+                        >
+                          {systemResources.disk.usage_percent}%
+                        </div>
+                        <span className="text-xs text-slate-400">
+                          ({formatBytesGB(systemResources.disk.used_bytes)} ocupado)
+                        </span>
+                      </div>
+
+                      {/* Barra de Progresso */}
+                      <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden mb-4">
+                        <div
+                          style={{ width: `${Math.min(100, systemResources.disk.usage_percent)}%` }}
+                          className={`h-full transition-all duration-500 ${
+                            systemResources.disk.usage_percent >= 90
+                              ? "bg-red-500"
+                              : systemResources.disk.usage_percent >= 75
+                              ? "bg-amber-500"
+                              : "bg-amber-500"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800/80 space-y-1.5 text-xs text-slate-400">
+                      <div className="flex justify-between">
+                        <span>Espaço Disponível:</span>
+                        <span className="text-emerald-400 font-medium">
+                          {formatBytesGB(systemResources.disk.free_bytes)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Espaço Utilizado:</span>
+                        <span className="text-slate-200 font-medium">
+                          {formatBytesGB(systemResources.disk.used_bytes)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card de Informações do Sistema e Uptime */}
+                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center">
+                      <Clock size={20} />
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Tempo Ligado (Uptime)
+                      </span>
+                      <div className="text-base font-bold text-white font-mono mt-0.5">
+                        {formatUptime(systemResources.uptime_seconds)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Plataforma</span>
+                      <span className="text-slate-200 font-medium">{systemResources.platform}</span>
+                    </div>
+                    <div className="h-6 w-px bg-slate-800" />
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Hostname</span>
+                      <span className="text-slate-200 font-mono">{systemResources.hostname}</span>
+                    </div>
+                    <div className="h-6 w-px bg-slate-800" />
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase">Última Leitura</span>
+                      <span className="text-slate-200 font-mono">
+                        {new Date(systemResources.timestamp).toLocaleTimeString("pt-BR")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
       </main>
+
+      {/* MODAL: ANÁLISE DETALHADA DE TOKENS (ENTRADA VS SAÍDA E DIA DE PICO) */}
+      {isTokenModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            {/* Topo do Modal */}
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center">
+                  <BarChart2 size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Análise Detalhada de Tokens</h2>
+                  <p className="text-xs text-slate-400">
+                    Comparativo Entrada (Prompt) vs Saída (Geração) e Picos de Consumo
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsTokenModalOpen(false)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {isLoadingTokens ? (
+              <div className="py-16 text-center text-slate-400 flex flex-col items-center gap-2">
+                <RefreshCw size={24} className="animate-spin text-brand-400" />
+                <p className="text-xs">Carregando métricas de tokens...</p>
+              </div>
+            ) : tokenAnalytics ? (
+              <div className="space-y-6">
+                {/* Cards Principais */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase">
+                      Tokens Totais
+                    </span>
+                    <div className="text-xl font-bold text-white mt-1">
+                      {formatNumber(tokenAnalytics.total_tokens)}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">Volume acumulado</div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-indigo-950/30 border border-indigo-500/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-indigo-400 uppercase">
+                        Entrada (Prompt)
+                      </span>
+                      <span className="text-xs font-mono font-bold text-indigo-400">
+                        {tokenAnalytics.prompt_percentage}%
+                      </span>
+                    </div>
+                    <div className="text-xl font-bold text-indigo-200 mt-1">
+                      {formatNumber(tokenAnalytics.total_prompt_tokens)}
+                    </div>
+                    <div className="text-[11px] text-indigo-400/70 mt-1">
+                      Perguntas e contexto enviados
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-rose-950/30 border border-brand-500/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-brand-400 uppercase">
+                        Saída (Geração)
+                      </span>
+                      <span className="text-xs font-mono font-bold text-brand-400">
+                        {tokenAnalytics.completion_percentage}%
+                      </span>
+                    </div>
+                    <div className="text-xl font-bold text-rose-200 mt-1">
+                      {formatNumber(tokenAnalytics.total_completion_tokens)}
+                    </div>
+                    <div className="text-[11px] text-brand-400/70 mt-1">
+                      Respostas geradas pelos modelos
+                    </div>
+                  </div>
+                </div>
+
+                {/* Barra Proporcional */}
+                <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                  <div className="flex justify-between text-xs text-slate-300 font-medium">
+                    <span>Proporção Entrada vs Saída</span>
+                    <span className="text-slate-400 font-mono">
+                      {tokenAnalytics.prompt_percentage}% / {tokenAnalytics.completion_percentage}%
+                    </span>
+                  </div>
+                  <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden flex">
+                    <div
+                      style={{ width: `${tokenAnalytics.prompt_percentage}%` }}
+                      className="bg-indigo-500 h-full transition-all"
+                      title={`Entrada: ${tokenAnalytics.prompt_percentage}%`}
+                    />
+                    <div
+                      style={{ width: `${tokenAnalytics.completion_percentage}%` }}
+                      className="bg-brand-500 h-full transition-all"
+                      title={`Saída: ${tokenAnalytics.completion_percentage}%`}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500" /> Entrada
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-brand-500" /> Saída
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card do Dia de Pico */}
+                {tokenAnalytics.peak_day && (
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-amber-500/10 via-brand-500/10 to-transparent border border-amber-500/20 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                        <TrendingUp size={18} />
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+                          Dia com Maior Consumo (Pico)
+                        </span>
+                        <div className="text-base font-bold text-white mt-0.5">
+                          {tokenAnalytics.peak_day.date.split("-").reverse().join("/")}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-amber-400 font-mono">
+                        {formatNumber(tokenAnalytics.peak_day.total_tokens)} tokens
+                      </div>
+                      <div className="text-[11px] text-slate-400">Recorde de uso diário</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Histórico Diário */}
+                <div className="space-y-3">
+                  <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                    Histórico Diário de Uso ({tokenAnalytics.daily_usage.length} dias registrados)
+                  </h3>
+                  {tokenAnalytics.daily_usage.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-4 text-center">
+                      Nenhuma mensagem registrada no período.
+                    </p>
+                  ) : (
+                    <div className="border border-slate-800 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 text-[11px] border-b border-slate-800">
+                          <tr>
+                            <th className="py-2.5 px-3">Data</th>
+                            <th className="py-2.5 px-3">Mensagens</th>
+                            <th className="py-2.5 px-3 text-indigo-400">Entrada</th>
+                            <th className="py-2.5 px-3 text-brand-400">Saída</th>
+                            <th className="py-2.5 px-3 text-right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                          {tokenAnalytics.daily_usage.map((d) => (
+                            <tr key={d.date} className="hover:bg-slate-800/30">
+                              <td className="py-2.5 px-3 text-slate-300">
+                                {d.date.split("-").reverse().join("/")}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-400">
+                                {formatNumber(d.messages_count)}
+                              </td>
+                              <td className="py-2.5 px-3 text-indigo-300">
+                                {formatNumber(d.prompt_tokens)}
+                              </td>
+                              <td className="py-2.5 px-3 text-rose-300">
+                                {formatNumber(d.completion_tokens)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-bold text-white">
+                                {formatNumber(d.total_tokens)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

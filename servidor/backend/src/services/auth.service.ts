@@ -12,7 +12,7 @@ import {
   UpdateProfileInput,
 } from "../schemas/auth.schema";
 import { AuthUser, UserType } from "../types";
-import { UnauthorizedError, ValidationError } from "../utils/errors";
+import { ForbiddenError, UnauthorizedError, ValidationError } from "../utils/errors";
 import { logger } from "../utils/logger";
 import { getAuditService } from "./audit.service";
 
@@ -161,7 +161,7 @@ export class PostgresAuthService implements IAuthService {
     const emailKey = input.email.toLowerCase();
 
     const queryResult = await this.pool.query(
-      "SELECT id, email, password_hash, raw_user_meta_data, is_admin, last_seen_at FROM auth.users WHERE lower(email) = lower($1) LIMIT 1",
+      "SELECT id, email, password_hash, raw_user_meta_data, is_admin, last_seen_at, is_blocked, user_type, ra, cpf, nif FROM auth.users WHERE lower(email) = lower($1) LIMIT 1",
       [emailKey]
     );
 
@@ -170,6 +170,10 @@ export class PostgresAuthService implements IAuthService {
     }
 
     const user = queryResult.rows[0];
+
+    if (user.is_blocked) {
+      throw new ForbiddenError("Esta conta de usuário foi bloqueada pelo administrador.");
+    }
 
     if (!user.password_hash) {
       throw new UnauthorizedError("Credenciais de acesso inválidas.");
@@ -344,7 +348,7 @@ export class PostgresAuthService implements IAuthService {
 
   public async getProfile(userId: string): Promise<AuthUser> {
     const userRes = await this.pool.query(
-      "SELECT id, email, raw_user_meta_data, is_admin, last_seen_at, user_type, ra, cpf, nif FROM auth.users WHERE id = $1 LIMIT 1",
+      "SELECT id, email, raw_user_meta_data, is_admin, last_seen_at, user_type, ra, cpf, nif, is_blocked FROM auth.users WHERE id = $1 LIMIT 1",
       [userId]
     );
 
@@ -362,6 +366,7 @@ export class PostgresAuthService implements IAuthService {
       name: name || undefined,
       role: "authenticated",
       is_admin: isAdmin,
+      is_blocked: Boolean(user.is_blocked),
       user_type: user.user_type,
       ra: user.ra,
       cpf: user.cpf,
@@ -544,6 +549,7 @@ export class InMemoryAuthService implements IAuthService {
       cpf?: string;
       nif?: string;
       is_admin?: boolean;
+      is_blocked?: boolean;
       last_seen_at?: string;
       deleted_at?: string | null;
       created_at: string;
@@ -595,6 +601,8 @@ export class InMemoryAuthService implements IAuthService {
       .update(input.password)
       .digest("hex");
     const isAdmin = emailKey === "rselvagio@sp.senai.br";
+    const finalUserType: UserType = isAdmin ? "funcionario" : userType;
+    const finalNif = isAdmin ? (nif || "1085920") : nif;
     const now = new Date().toISOString();
 
     this.users.set(emailKey, {
@@ -602,11 +610,12 @@ export class InMemoryAuthService implements IAuthService {
       email: emailKey,
       passwordHash,
       name: input.name,
-      user_type: userType,
+      user_type: finalUserType,
       ra,
       cpf,
-      nif,
+      nif: finalNif,
       is_admin: isAdmin,
+      is_blocked: false,
       last_seen_at: now,
       created_at: now,
     });
@@ -653,6 +662,10 @@ export class InMemoryAuthService implements IAuthService {
 
     if (!user || user.passwordHash !== hash) {
       throw new UnauthorizedError("Credenciais de acesso inválidas.");
+    }
+
+    if (user.is_blocked) {
+      throw new ForbiddenError("Esta conta de usuário foi bloqueada pelo administrador.");
     }
 
     user.last_seen_at = new Date().toISOString();
@@ -767,6 +780,7 @@ export class InMemoryAuthService implements IAuthService {
       cpf?: string;
       nif?: string;
       is_admin?: boolean;
+      is_blocked?: boolean;
       last_seen_at?: string;
       created_at: string;
     } | null = null;
@@ -810,6 +824,7 @@ export class InMemoryAuthService implements IAuthService {
       cpf?: string;
       nif?: string;
       is_admin?: boolean;
+      is_blocked?: boolean;
       last_seen_at?: string;
       created_at: string;
     } | null = null;
@@ -837,6 +852,7 @@ export class InMemoryAuthService implements IAuthService {
       cpf: foundUser.cpf,
       nif: foundUser.nif,
       is_admin: isAdmin,
+      is_blocked: Boolean(foundUser.is_blocked),
       last_seen_at: foundUser.last_seen_at,
     };
   }
@@ -852,6 +868,16 @@ export class InMemoryAuthService implements IAuthService {
 
   public getUsersList() {
     return Array.from(this.users.values());
+  }
+
+  public setUserBlocked(userId: string, isBlocked: boolean): boolean {
+    for (const u of this.users.values()) {
+      if (u.id === userId) {
+        u.is_blocked = isBlocked;
+        return true;
+      }
+    }
+    return false;
   }
 
   public setUserAdmin(userId: string, isAdmin: boolean): boolean {

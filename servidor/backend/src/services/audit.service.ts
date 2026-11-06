@@ -124,3 +124,4 @@ export function getAuditService(): IAuditService {
 export function setAuditServiceForTesting(service: IAuditService): void {
   defaultAuditServiceInstance = service;
 }
+
