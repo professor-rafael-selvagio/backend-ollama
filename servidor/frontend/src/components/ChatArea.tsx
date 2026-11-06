@@ -49,8 +49,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     return (
       <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-6 text-center">
         <div className="max-w-xl space-y-6">
-          <div className="inline-flex p-4 bg-gradient-to-tr from-brand-600/20 to-rose-400/20 border border-brand-500/30 rounded-3xl text-brand-400 shadow-xl shadow-brand-500/10">
-            <Bot size={44} />
+          <div className="inline-flex flex-col items-center">
+            <img
+              src="/logo-senai.png"
+              alt="SENAI"
+              className="h-12 w-auto object-contain rounded drop-shadow-lg mb-2"
+            />
           </div>
 
           <div>

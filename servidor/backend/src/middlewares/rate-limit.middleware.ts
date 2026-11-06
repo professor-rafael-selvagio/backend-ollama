@@ -36,7 +36,7 @@ export const aiRateLimiter = rateLimit({
  */
 export const authRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
-  max: 20, // 20 tentativas por minuto
+  max: env.NODE_ENV === "test" ? 1000 : 20, // Aumentado em ambiente de teste para suportar suíte completa
   standardHeaders: true,
   legacyHeaders: false,
   message: {

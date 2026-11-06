@@ -119,6 +119,24 @@ class ApiService {
       );
       return { message: res.message };
     },
+
+    updateProfile: async (name: string): Promise<User> => {
+      const res = await this.request<{ status: string; data: { user: User } }>(
+        "/api/auth/profile",
+        {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        }
+      );
+      const currentUser = this.getSavedUser();
+      if (currentUser) {
+        localStorage.setItem(
+          USER_KEY,
+          JSON.stringify({ ...currentUser, name: res.data.user.name })
+        );
+      }
+      return res.data.user;
+    },
   };
 
   // --- Módulo Ollama ---

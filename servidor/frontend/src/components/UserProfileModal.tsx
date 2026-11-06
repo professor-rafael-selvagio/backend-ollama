@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   User as UserIcon,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { User } from "../types";
 import { api } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -24,12 +25,24 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onClose,
   user,
 }) => {
+  const { updateProfile } = useAuth();
+  const [name, setName] = useState(user?.name || "");
+  const [isUpdatingName, setIsUpdatingName] = useState(false);
+  const [nameSuccessMessage, setNameSuccessMessage] = useState<string | null>(null);
+  const [nameErrorMessage, setNameErrorMessage] = useState<string | null>(null);
+
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name || "");
+    }
+  }, [user]);
 
   if (!isOpen || !user) return null;
 
@@ -39,11 +52,37 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     setConfirmPassword("");
     setErrorMessage(null);
     setSuccessMessage(null);
+    setNameSuccessMessage(null);
+    setNameErrorMessage(null);
   };
 
   const handleClose = () => {
     handleResetForm();
     onClose();
+  };
+
+  const handleUpdateName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setNameErrorMessage(null);
+    setNameSuccessMessage(null);
+
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length < 2) {
+      setNameErrorMessage("O nome completo deve conter pelo menos 2 caracteres.");
+      return;
+    }
+
+    setIsUpdatingName(true);
+    try {
+      await updateProfile(trimmed);
+      setNameSuccessMessage("Nome atualizado com sucesso!");
+    } catch (err: unknown) {
+      setNameErrorMessage(
+        err instanceof Error ? err.message : "Erro ao atualizar nome completo."
+      );
+    } finally {
+      setIsUpdatingName(false);
+    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -108,28 +147,62 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         {/* Corpo com Informações e Formulário */}
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
-          {/* Seção 1: Dados do Perfil */}
+          {/* Seção 1: Dados do Perfil e Atualização de Nome */}
           <div className="space-y-3">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <ShieldCheck size={14} className="text-brand-400" />
               Informações da Conta
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3">
-                <span className="text-[11px] text-slate-400 flex items-center gap-1.5 mb-1">
-                  <UserIcon size={12} /> Nome Completo
-                </span>
-                <p className="text-sm font-medium text-white truncate">
-                  {user.name || "Não informado"}
-                </p>
+            {nameSuccessMessage && (
+              <div className="p-3 bg-brand-500/10 border border-brand-500/30 text-brand-400 text-sm rounded-xl flex items-center gap-2">
+                <CheckCircle2 size={16} className="shrink-0" />
+                <span>{nameSuccessMessage}</span>
               </div>
+            )}
 
-              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3">
-                <span className="text-[11px] text-slate-400 flex items-center gap-1.5 mb-1">
+            {nameErrorMessage && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{nameErrorMessage}</span>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {/* Campo Editável de Nome Completo */}
+              <form onSubmit={handleUpdateName} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
+                <label className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium">
+                  <UserIcon size={12} /> Nome Completo
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      setNameSuccessMessage(null);
+                      setNameErrorMessage(null);
+                    }}
+                    placeholder="Seu nome completo..."
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white placeholder-slate-600 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isUpdatingName || !name.trim() || name.trim() === (user.name || "")}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white transition-all shadow-md shadow-brand-600/20 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                  >
+                    {isUpdatingName && <Loader2 size={12} className="animate-spin" />}
+                    Salvar Nome
+                  </button>
+                </div>
+              </form>
+
+              {/* Exibição de E-mail (somente leitura) */}
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5">
+                <span className="text-[11px] text-slate-400 flex items-center gap-1.5 mb-1 font-medium">
                   <Mail size={12} /> E-mail Cadastrado
                 </span>
-                <p className="text-sm font-medium text-white truncate">
+                <p className="text-sm font-medium text-slate-200 truncate">
                   {user.email}
                 </p>
               </div>
@@ -255,3 +328,4 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     </div>
   );
 };
+

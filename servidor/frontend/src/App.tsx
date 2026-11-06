@@ -12,9 +12,11 @@ const AppContent: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
-        <div className="p-3 bg-brand-500/10 border border-brand-500/20 rounded-2xl mb-4 text-brand-500 animate-pulse">
-          <Bot size={40} />
-        </div>
+        <img
+          src="/logo-senai.png"
+          alt="SENAI"
+          className="h-10 w-auto object-contain mb-4 animate-pulse rounded drop-shadow-md"
+        />
         <div className="flex items-center gap-2 text-sm text-slate-400">
           <Loader2 size={16} className="animate-spin text-brand-400" />
           <span>Carregando plataforma...</span>

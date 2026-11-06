@@ -75,6 +75,7 @@ export async function authMiddleware(
       req.user = {
         id: data.user.id,
         email: data.user.email,
+        name: data.user.user_metadata?.name || data.user.user_metadata?.full_name,
         role: data.user.role,
         app_metadata: data.user.app_metadata,
         user_metadata: data.user.user_metadata,
@@ -100,6 +101,7 @@ export async function authMiddleware(
       req.user = {
         id: decoded.sub,
         email: decoded.email,
+        name: decoded.name || undefined,
         role: decoded.role || "authenticated",
         user_metadata: { name: decoded.name },
       };

@@ -171,7 +171,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
   });
 
   describe("GET /api/auth/me (Perfil do Usuário Autenticado)", () => {
-    it("deve retornar o perfil do usuário logado através do token de acesso", async () => {
+    it("deve retornar o perfil do usuário logado através do token de acesso com o nome", async () => {
       const registerRes = await request(app)
         .post("/api/auth/register")
         .send({
@@ -189,6 +189,72 @@ describe("Módulo de Autenticação (/api/auth)", () => {
       expect(meRes.status).toBe(200);
       expect(meRes.body).toHaveProperty("status", "success");
       expect(meRes.body.data.user).toHaveProperty("id");
+      expect(meRes.body.data.user.email).toBe("perfil@teste.com");
+      expect(meRes.body.data.user.name).toBe("Perfil Teste");
+    });
+  });
+
+  describe("PATCH /api/auth/profile (Atualização de Nome do Usuário)", () => {
+    it("deve atualizar o nome do usuário com sucesso e refletir em /me", async () => {
+      const reg = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "atualiza.nome@teste.com",
+          password: "senhaSegura123",
+          name: "Nome Antigo",
+        });
+
+      const token = reg.body.data.session.access_token;
+
+      const updateRes = await request(app)
+        .patch("/api/auth/profile")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          name: "Nome Novo Atualizado",
+        });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body).toHaveProperty("status", "success");
+      expect(updateRes.body.data.user.name).toBe("Nome Novo Atualizado");
+
+      // Verifica se /me agora retorna o novo nome
+      const meRes = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(meRes.status).toBe(200);
+      expect(meRes.body.data.user.name).toBe("Nome Novo Atualizado");
+    });
+
+    it("deve rejeitar nome vazio ou com menos de 2 caracteres retornando 400", async () => {
+      const reg = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "nome.invalido@teste.com",
+          password: "senhaSegura123",
+        });
+
+      const token = reg.body.data.session.access_token;
+
+      const updateRes = await request(app)
+        .patch("/api/auth/profile")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          name: "A",
+        });
+
+      expect(updateRes.status).toBe(400);
+      expect(updateRes.body).toHaveProperty("code", "VALIDATION_ERROR");
+    });
+
+    it("deve rejeitar requisição sem autenticação retornando 401", async () => {
+      const updateRes = await request(app)
+        .patch("/api/auth/profile")
+        .send({
+          name: "Novo Nome",
+        });
+
+      expect(updateRes.status).toBe(401);
     });
   });
 

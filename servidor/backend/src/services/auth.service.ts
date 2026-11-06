@@ -5,7 +5,12 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { getDbPool } from "../config/database";
-import { RegisterInput, LoginInput, ChangePasswordInput } from "../schemas/auth.schema";
+import {
+  RegisterInput,
+  LoginInput,
+  ChangePasswordInput,
+  UpdateProfileInput,
+} from "../schemas/auth.schema";
 import { UnauthorizedError, ValidationError } from "../utils/errors";
 import { logger } from "../utils/logger";
 
@@ -34,6 +39,8 @@ export interface IAuthService {
   login(input: LoginInput): Promise<AuthResult>;
   refreshSession(refreshToken: string): Promise<AuthSession>;
   changePassword(userId: string, input: ChangePasswordInput): Promise<{ message: string }>;
+  updateProfile(userId: string, input: UpdateProfileInput): Promise<AuthUser>;
+  getProfile(userId: string): Promise<AuthUser>;
 }
 
 /**
@@ -233,6 +240,56 @@ export class PostgresAuthService implements IAuthService {
 
     return { message: "Senha alterada com sucesso." };
   }
+
+  public async updateProfile(
+    userId: string,
+    input: UpdateProfileInput
+  ): Promise<AuthUser> {
+    const userRes = await this.pool.query(
+      "SELECT id, email, raw_user_meta_data FROM auth.users WHERE id = $1 LIMIT 1",
+      [userId]
+    );
+
+    if (!userRes.rowCount || userRes.rowCount === 0) {
+      throw new UnauthorizedError("Usuário não encontrado.");
+    }
+
+    const currentMeta = userRes.rows[0].raw_user_meta_data || {};
+    const updatedMeta = { ...currentMeta, name: input.name };
+
+    await this.pool.query(
+      "UPDATE auth.users SET raw_user_meta_data = $1, updated_at = now() WHERE id = $2",
+      [JSON.stringify(updatedMeta), userId]
+    );
+
+    return {
+      id: userRes.rows[0].id,
+      email: userRes.rows[0].email,
+      name: input.name,
+      role: "authenticated",
+    };
+  }
+
+  public async getProfile(userId: string): Promise<AuthUser> {
+    const userRes = await this.pool.query(
+      "SELECT id, email, raw_user_meta_data FROM auth.users WHERE id = $1 LIMIT 1",
+      [userId]
+    );
+
+    if (!userRes.rowCount || userRes.rowCount === 0) {
+      throw new UnauthorizedError("Usuário não encontrado.");
+    }
+
+    const user = userRes.rows[0];
+    const name = user.raw_user_meta_data?.name;
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: name || undefined,
+      role: "authenticated",
+    };
+  }
 }
 
 /**
@@ -348,6 +405,37 @@ export class SupabaseAuthService implements IAuthService {
       throw new UnauthorizedError(error.message);
     }
     return { message: "Senha alterada com sucesso." };
+  }
+
+  public async updateProfile(
+    userId: string,
+    input: UpdateProfileInput
+  ): Promise<AuthUser> {
+    const { data, error } = await this.client.auth.updateUser({
+      data: { name: input.name },
+    });
+    if (error || !data.user) {
+      throw new UnauthorizedError(error?.message || "Falha ao atualizar perfil.");
+    }
+    return {
+      id: data.user.id,
+      email: data.user.email || "",
+      name: input.name,
+      role: data.user.role || "authenticated",
+    };
+  }
+
+  public async getProfile(userId: string): Promise<AuthUser> {
+    const { data, error } = await this.client.auth.getUser();
+    if (error || !data.user) {
+      throw new UnauthorizedError(error?.message || "Usuário não encontrado.");
+    }
+    return {
+      id: data.user.id,
+      email: data.user.email || "",
+      name: data.user.user_metadata?.name,
+      role: data.user.role || "authenticated",
+    };
   }
 }
 
@@ -470,6 +558,53 @@ export class InMemoryAuthService implements IAuthService {
       .digest("hex");
 
     return { message: "Senha alterada com sucesso." };
+  }
+
+  public async updateProfile(
+    userId: string,
+    input: UpdateProfileInput
+  ): Promise<AuthUser> {
+    let foundUser: { id: string; email: string; passwordHash: string; name?: string } | null = null;
+    for (const u of this.users.values()) {
+      if (u.id === userId) {
+        foundUser = u;
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      throw new UnauthorizedError("Usuário não encontrado.");
+    }
+
+    foundUser.name = input.name;
+
+    return {
+      id: foundUser.id,
+      email: foundUser.email,
+      name: foundUser.name,
+      role: "authenticated",
+    };
+  }
+
+  public async getProfile(userId: string): Promise<AuthUser> {
+    let foundUser: { id: string; email: string; passwordHash: string; name?: string } | null = null;
+    for (const u of this.users.values()) {
+      if (u.id === userId) {
+        foundUser = u;
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      throw new UnauthorizedError("Usuário não encontrado.");
+    }
+
+    return {
+      id: foundUser.id,
+      email: foundUser.email,
+      name: foundUser.name,
+      role: "authenticated",
+    };
   }
 
   public clear(): void {

@@ -80,9 +80,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Topo / Logo */}
         <div className="p-4 border-b border-slate-800/60 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-rose-400 flex items-center justify-center text-white shadow-md shadow-brand-600/30">
-              <Sparkles size={18} />
-            </div>
+            <img
+              src="/logo-senai.png"
+              alt="SENAI"
+              className="h-7 w-auto object-contain rounded"
+            />
             <div>
               <h2 className="font-bold text-sm tracking-tight text-white leading-tight">
                 SENAI 6.01

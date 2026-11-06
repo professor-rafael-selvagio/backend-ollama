@@ -4,6 +4,7 @@ import {
   loginSchema,
   refreshTokenSchema,
   registerSchema,
+  updateProfileSchema,
 } from "../schemas/auth.schema";
 import { getAuthService, IAuthService } from "../services/auth.service";
 import { UnauthorizedError } from "../utils/errors";
@@ -106,10 +107,53 @@ export class AuthController {
         throw new UnauthorizedError("Usuário não autenticado.");
       }
 
+      let userProfile = req.user;
+      try {
+        const profile = await this.getService().getProfile(req.user.id);
+        userProfile = {
+          ...req.user,
+          email: profile.email || req.user.email,
+          name: profile.name ?? req.user.name,
+        };
+      } catch {
+        // Fallback para dados decodificados do token caso o banco não responda
+      }
+
       res.status(200).json({
         status: "success",
         data: {
-          user: req.user,
+          user: userProfile,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * PATCH /api/auth/profile
+   * Atualiza as informações do perfil (nome) do usuário autenticado
+   */
+  public updateProfile = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user?.id) {
+        throw new UnauthorizedError("Usuário não autenticado.");
+      }
+      const validatedInput = updateProfileSchema.parse(req.body);
+      const updatedUser = await this.getService().updateProfile(
+        req.user.id,
+        validatedInput
+      );
+
+      res.status(200).json({
+        status: "success",
+        message: "Perfil atualizado com sucesso.",
+        data: {
+          user: updatedUser,
         },
       });
     } catch (error) {

@@ -33,9 +33,11 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onSwitchToLogin }) =
       <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-2xl p-8 shadow-2xl backdrop-blur-xl">
         {/* Logo e Cabeçalho */}
         <div className="text-center mb-8">
-          <div className="inline-flex p-3 bg-brand-500/10 border border-brand-500/20 rounded-2xl mb-4 text-brand-500">
-            <Bot size={36} className="animate-pulse" />
-          </div>
+          <img
+            src="/logo-senai.png"
+            alt="SENAI"
+            className="h-12 w-auto object-contain mx-auto mb-4 drop-shadow-md rounded"
+          />
           <h1 className="text-2xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
             Criar Nova Conta <Sparkles size={18} className="text-amber-400" />
           </h1>

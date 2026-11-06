@@ -112,6 +112,10 @@
 ### Tarefa 5: Validação Integral, Build e Publicação
 
 - [ ] **Passo 1: Rodar todos os testes automatizados do backend (`npm test`)**
-- [ ] **Passo 2: Rodar compilação do backend TypeScript (`npm run build`)**
-- [ ] **Passo 3: Rodar compilação do frontend Vite (`npm run build`)**
-- [ ] **Passo 4: Enviar todas as alterações ao repositório GitHub (`origin main`)**
+- [x] **Passo 1: Rodar suíte de testes automatizados do backend (`npm test`)**
+- [x] **Passo 2: Rodar compilação do backend TypeScript (`npm run build`)**
+- [x] **Passo 3: Rodar compilação do frontend Vite (`npm run build`)**
+- [x] **Passo 4: Atualização de perfil de usuário com suporte a edição de nome e retorno de nome completo salvo**
+- [x] **Passo 5: Aplicação do logotipo oficial SENAI no topo da barra lateral, telas de login, registro, tela inicial de chat e favicon**
+- [x] **Passo 6: Enviar todas as alterações ao repositório GitHub (`origin main`)**
+

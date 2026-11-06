@@ -65,4 +65,18 @@ export const changePasswordSchema = z.object({
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+/**
+ * Schema de validação para atualização de perfil do usuário
+ */
+export const updateProfileSchema = z.object({
+  name: z
+    .string({ required_error: "O nome completo é obrigatório" })
+    .trim()
+    .min(2, "O nome deve conter no mínimo 2 caracteres")
+    .max(100, "O nome pode ter no máximo 100 caracteres"),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+
 

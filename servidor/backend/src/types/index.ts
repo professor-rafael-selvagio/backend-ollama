@@ -84,6 +84,7 @@ export interface OllamaChatResponse {
 export interface AuthUser {
   id: string;
   email?: string;
+  name?: string;
   role?: string;
   app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
