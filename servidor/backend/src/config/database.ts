@@ -47,9 +47,31 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         email text UNIQUE NOT NULL,
         password_hash text,
         raw_user_meta_data jsonb DEFAULT '{}'::jsonb,
+        is_admin boolean NOT NULL DEFAULT false,
+        last_seen_at timestamptz NOT NULL DEFAULT now(),
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'is_admin'
+        ) THEN
+            ALTER TABLE auth.users ADD COLUMN is_admin boolean NOT NULL DEFAULT false;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'last_seen_at'
+        ) THEN
+            ALTER TABLE auth.users ADD COLUMN last_seen_at timestamptz NOT NULL DEFAULT now();
+        END IF;
+    END $$;
+
+    -- Concede permissão de administrador garantida para rselvagio@sp.senai.br
+    UPDATE auth.users SET is_admin = true WHERE email = 'rselvagio@sp.senai.br';
 
     CREATE TABLE IF NOT EXISTS public.projects (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -88,8 +110,27 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         role text NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
         content text NOT NULL,
         tokens integer,
+        prompt_tokens integer DEFAULT 0,
+        completion_tokens integer DEFAULT 0,
         created_at timestamptz NOT NULL DEFAULT now()
     );
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'prompt_tokens'
+        ) THEN
+            ALTER TABLE public.messages ADD COLUMN prompt_tokens integer DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'completion_tokens'
+        ) THEN
+            ALTER TABLE public.messages ADD COLUMN completion_tokens integer DEFAULT 0;
+        END IF;
+    END $$;
 
     CREATE INDEX IF NOT EXISTS idx_users_email ON auth.users(email);
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);

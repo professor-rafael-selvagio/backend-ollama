@@ -114,6 +114,8 @@ export class AuthController {
           ...req.user,
           email: profile.email || req.user.email,
           name: profile.name ?? req.user.name,
+          is_admin: profile.is_admin ?? req.user.is_admin,
+          last_seen_at: profile.last_seen_at ?? req.user.last_seen_at,
         };
       } catch {
         // Fallback para dados decodificados do token caso o banco não responda
@@ -124,6 +126,29 @@ export class AuthController {
         data: {
           user: userProfile,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * POST /api/auth/heartbeat
+   * Sinaliza atividade do usuário para contagem de status online
+   */
+  public heartbeat = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user?.id) {
+        throw new UnauthorizedError("Usuário não autenticado.");
+      }
+      await this.getService().recordActivity(req.user.id);
+      res.status(200).json({
+        status: "success",
+        message: "Heartbeat registrado.",
       });
     } catch (error) {
       next(error);

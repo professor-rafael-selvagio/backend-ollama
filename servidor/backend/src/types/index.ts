@@ -86,6 +86,8 @@ export interface AuthUser {
   email?: string;
   name?: string;
   role?: string;
+  is_admin?: boolean;
+  last_seen_at?: string;
   app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
 }
@@ -121,11 +123,42 @@ export interface DatabaseMessage {
   role: "system" | "user" | "assistant";
   content: string;
   tokens?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
   created_at: string;
 }
 
 export interface ConversationWithMessages extends Conversation {
   messages: DatabaseMessage[];
+}
+
+export interface AdminUserSummary {
+  id: string;
+  name: string;
+  email: string;
+  is_admin: boolean;
+  is_online: boolean;
+  last_seen_at: string;
+  created_at: string;
+  total_conversations: number;
+  total_messages: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+}
+
+export interface AdminMetricsResponse {
+  total_users: number;
+  online_users: number;
+  total_conversations: number;
+  total_messages: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+}
+
+export interface UpdateUserRoleInput {
+  is_admin: boolean;
 }
 
 declare global {

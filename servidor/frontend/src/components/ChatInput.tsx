@@ -69,8 +69,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           )}
         </button>
       </div>
-      <p className="text-[11px] text-center text-slate-500 mt-2">
-        Modelos de IA locais executando de forma privada no seu servidor Linux.
+      <p className="text-[11px] text-center text-slate-400 mt-2">
+        Modelos locais executando de forma privada • Desenvolvido pelo{" "}
+        <span className="text-slate-300 font-medium">Prof. Esp. Rafael Selvagio</span>, utilizando IA.
       </p>
     </div>
   );

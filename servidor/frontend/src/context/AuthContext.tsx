@@ -5,6 +5,7 @@ import { api } from "../services/api";
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name?: string) => Promise<void>;
@@ -42,6 +43,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener("auth-expired", handleExpired);
   }, []);
 
+  // Heartbeat periódico a cada 60s enquanto estiver autenticado
+  useEffect(() => {
+    if (!user) return;
+
+    api.auth.heartbeat();
+    const interval = setInterval(() => {
+      api.auth.heartbeat();
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
   const login = async (email: string, password: string) => {
     const data = await api.auth.login(email, password);
     setUser(data.user);
@@ -62,11 +75,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
+  const isAdmin = Boolean(
+    user?.is_admin || user?.email?.toLowerCase() === "rselvagio@sp.senai.br"
+  );
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated: !!user,
+        isAdmin,
         isLoading,
         login,
         register,

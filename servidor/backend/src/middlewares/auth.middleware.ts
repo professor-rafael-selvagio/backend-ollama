@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
+import { getAuthService } from "../services/auth.service";
 import { UnauthorizedError } from "../utils/errors";
 import { logger } from "../utils/logger";
 
@@ -72,14 +73,27 @@ export async function authMiddleware(
         return next(new UnauthorizedError("Token de autenticação inválido ou expirado."));
       }
 
+      const isAdmin = Boolean(
+        data.user.email?.toLowerCase() === "rselvagio@sp.senai.br" ||
+        data.user.app_metadata?.is_admin ||
+        data.user.user_metadata?.is_admin
+      );
+
       req.user = {
         id: data.user.id,
         email: data.user.email,
         name: data.user.user_metadata?.name || data.user.user_metadata?.full_name,
         role: data.user.role,
+        is_admin: isAdmin,
         app_metadata: data.user.app_metadata,
         user_metadata: data.user.user_metadata,
       };
+
+      try {
+        getAuthService().recordActivity(req.user.id).catch(() => {});
+      } catch {
+        // noop
+      }
 
       return next();
     } catch (err: unknown) {
@@ -96,15 +110,28 @@ export async function authMiddleware(
         email: string;
         role?: string;
         name?: string;
+        is_admin?: boolean;
       };
+
+      const isAdmin = Boolean(
+        decoded.is_admin ||
+        decoded.email?.toLowerCase() === "rselvagio@sp.senai.br"
+      );
 
       req.user = {
         id: decoded.sub,
         email: decoded.email,
         name: decoded.name || undefined,
         role: decoded.role || "authenticated",
+        is_admin: isAdmin,
         user_metadata: { name: decoded.name },
       };
+
+      try {
+        getAuthService().recordActivity(req.user.id).catch(() => {});
+      } catch {
+        // noop
+      }
 
       return next();
     } catch {
@@ -128,11 +155,41 @@ export async function authMiddleware(
     ? token.replace("mock-jwt-", "")
     : "local-developer";
 
+  let fallbackEmail = fallbackId.includes("@") ? fallbackId : `${fallbackId}@localhost`;
+  let fallbackName: string | undefined = undefined;
+  let isAdmin = Boolean(
+    fallbackEmail.toLowerCase() === "rselvagio@sp.senai.br" ||
+    req.headers["x-test-is-admin"] === "true"
+  );
+
+  try {
+    const profile = await getAuthService().getProfile(fallbackId);
+    if (profile) {
+      fallbackEmail = profile.email || fallbackEmail;
+      fallbackName = profile.name;
+      isAdmin = Boolean(
+        profile.is_admin ||
+        fallbackEmail.toLowerCase() === "rselvagio@sp.senai.br" ||
+        req.headers["x-test-is-admin"] === "true"
+      );
+    }
+  } catch {
+    // Mantém fallback inicial
+  }
+
   req.user = {
     id: fallbackId,
-    email: fallbackId.includes("@") ? fallbackId : `${fallbackId}@localhost`,
+    email: fallbackEmail,
+    name: fallbackName,
     role: "authenticated",
+    is_admin: isAdmin,
   };
+
+  try {
+    getAuthService().recordActivity(req.user.id).catch(() => {});
+  } catch {
+    // noop
+  }
 
   next();
 }

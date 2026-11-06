@@ -13,6 +13,7 @@ import {
   FolderInput,
   Layers,
   Sparkles,
+  ShieldCheck,
   User as UserIcon,
 } from "lucide-react";
 import { Conversation, Project, User } from "../types";
@@ -30,6 +31,7 @@ interface SidebarProps {
   user: User | null;
   onLogout: () => void;
   onOpenProfileModal?: () => void;
+  onOpenAdmin?: () => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
 }
@@ -47,6 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   user,
   onLogout,
   onOpenProfileModal,
+  onOpenAdmin,
   isOpenMobile,
   onCloseMobile,
 }) => {
@@ -96,7 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Botão Novo Chat */}
+        {/* Botão Novo Chat e Painel Administrativo */}
         <div className="p-3 pb-2 space-y-2">
           <button
             onClick={() => {
@@ -108,6 +111,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Plus size={18} />
             <span>Novo Chat</span>
           </button>
+
+          {(user?.is_admin || user?.email?.toLowerCase() === "rselvagio@sp.senai.br") && onOpenAdmin && (
+            <button
+              onClick={() => {
+                onOpenAdmin();
+                onCloseMobile();
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800/90 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-amber-500/30 hover:border-amber-500/50 font-medium py-2 px-3 rounded-xl text-xs transition-all cursor-pointer shadow-sm"
+              title="Acessar o Painel de Controle de Administrador"
+            >
+              <ShieldCheck size={15} className="text-amber-400" />
+              <span>Painel Administrativo</span>
+            </button>
+          )}
         </div>
 
         {/* Lista com Rolagem */}

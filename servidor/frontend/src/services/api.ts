@@ -1,4 +1,6 @@
 import {
+  AdminMetrics,
+  AdminUser,
   Conversation,
   ConversationWithMessages,
   DatabaseMessage,
@@ -135,6 +137,38 @@ class ApiService {
           JSON.stringify({ ...currentUser, name: res.data.user.name })
         );
       }
+      return res.data.user;
+    },
+
+    heartbeat: async (): Promise<void> => {
+      await this.request<{ status: string }>("/api/auth/heartbeat", {
+        method: "POST",
+      }).catch(() => {});
+    },
+  };
+
+  // --- Módulo Administração ---
+  public admin = {
+    getMetrics: async (): Promise<AdminMetrics> => {
+      const res = await this.request<{ status: string; data: AdminMetrics }>(
+        "/api/admin/metrics"
+      );
+      return res.data;
+    },
+    getUsers: async (): Promise<AdminUser[]> => {
+      const res = await this.request<{ status: string; data: { users: AdminUser[] } }>(
+        "/api/admin/users"
+      );
+      return res.data.users || [];
+    },
+    updateUserRole: async (userId: string, isAdmin: boolean): Promise<AdminUser> => {
+      const res = await this.request<{ status: string; data: { user: AdminUser } }>(
+        `/api/admin/users/${userId}/role`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ is_admin: isAdmin }),
+        }
+      );
       return res.data.user;
     },
   };

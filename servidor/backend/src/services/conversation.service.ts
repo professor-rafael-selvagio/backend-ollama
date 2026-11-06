@@ -32,7 +32,9 @@ export interface IConversationRepository {
     userId: string,
     role: "system" | "user" | "assistant",
     content: string,
-    tokens?: number
+    tokens?: number,
+    promptTokens?: number,
+    completionTokens?: number
   ): Promise<DatabaseMessage>;
   updateTitle(userId: string, conversationId: string, title: string): Promise<Conversation>;
   updateConversation(
@@ -112,7 +114,9 @@ export class InMemoryConversationRepository implements IConversationRepository {
     userId: string,
     role: "system" | "user" | "assistant",
     content: string,
-    tokens?: number
+    tokens?: number,
+    promptTokens?: number,
+    completionTokens?: number
   ): Promise<DatabaseMessage> {
     const msg: DatabaseMessage = {
       id: crypto.randomUUID(),
@@ -121,6 +125,8 @@ export class InMemoryConversationRepository implements IConversationRepository {
       role,
       content,
       tokens,
+      prompt_tokens: promptTokens ?? (role === "user" ? tokens ?? 0 : 0),
+      completion_tokens: completionTokens ?? (role === "assistant" ? tokens ?? 0 : 0),
       created_at: new Date().toISOString(),
     };
     const list = this.messages.get(conversationId) || [];
@@ -263,13 +269,23 @@ export class PostgresConversationRepository implements IConversationRepository {
     userId: string,
     role: "system" | "user" | "assistant",
     content: string,
-    tokens?: number
+    tokens?: number,
+    promptTokens?: number,
+    completionTokens?: number
   ): Promise<DatabaseMessage> {
     const res = await this.pool.query(
-      `INSERT INTO public.messages (conversation_id, user_id, role, content, tokens)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO public.messages (conversation_id, user_id, role, content, tokens, prompt_tokens, completion_tokens)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [conversationId, userId, role, content, tokens ?? null]
+      [
+        conversationId,
+        userId,
+        role,
+        content,
+        tokens ?? null,
+        promptTokens ?? (role === "user" ? tokens ?? 0 : 0),
+        completionTokens ?? (role === "assistant" ? tokens ?? 0 : 0),
+      ]
     );
 
     await this.pool.query(
@@ -448,7 +464,9 @@ export class SupabaseConversationRepository implements IConversationRepository {
     userId: string,
     role: "system" | "user" | "assistant",
     content: string,
-    tokens?: number
+    tokens?: number,
+    promptTokens?: number,
+    completionTokens?: number
   ): Promise<DatabaseMessage> {
     const { data, error } = await this.client
       .from("messages")
@@ -458,6 +476,8 @@ export class SupabaseConversationRepository implements IConversationRepository {
         role,
         content,
         tokens,
+        prompt_tokens: promptTokens ?? 0,
+        completion_tokens: completionTokens ?? 0,
       })
       .select()
       .single();
@@ -675,12 +695,14 @@ export class ConversationService {
       stream: false,
     });
 
-    // 4. Grava a resposta da IA no banco
+    // 4. Grava a resposta da IA no banco com contagem de tokens de entrada e saída
     const assistantMessage = await this.repository.addMessage(
       conversationId,
       userId,
       "assistant",
       aiResponse.message.content,
+      aiResponse.eval_count,
+      aiResponse.prompt_eval_count,
       aiResponse.eval_count
     );
 

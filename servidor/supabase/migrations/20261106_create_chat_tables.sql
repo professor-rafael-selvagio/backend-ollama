@@ -14,9 +14,31 @@ create table if not exists auth.users (
     email text unique not null,
     password_hash text,
     raw_user_meta_data jsonb default '{}'::jsonb,
+    is_admin boolean not null default false,
+    last_seen_at timestamptz not null default now(),
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'auth' and table_name = 'users' and column_name = 'is_admin'
+    ) then
+        alter table auth.users add column is_admin boolean not null default false;
+    end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'auth' and table_name = 'users' and column_name = 'last_seen_at'
+    ) then
+        alter table auth.users add column last_seen_at timestamptz not null default now();
+    end if;
+end $$;
+
+-- Concede permissão de administrador garantida para rselvagio@sp.senai.br
+update auth.users set is_admin = true where email = 'rselvagio@sp.senai.br';
 
 -- Função auxiliar auth.uid() para compatibilidade de políticas de RLS
 create or replace function auth.uid() returns uuid as $$
@@ -85,8 +107,27 @@ create table if not exists public.messages (
     role text not null check (role in ('system', 'user', 'assistant')),
     content text not null,
     tokens integer,
+    prompt_tokens integer default 0,
+    completion_tokens integer default 0,
     created_at timestamptz not null default now()
 );
+
+do $$
+begin
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'public' and table_name = 'messages' and column_name = 'prompt_tokens'
+    ) then
+        alter table public.messages add column prompt_tokens integer default 0;
+    end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'public' and table_name = 'messages' and column_name = 'completion_tokens'
+    ) then
+        alter table public.messages add column completion_tokens integer default 0;
+    end if;
+end $$;
 
 comment on table public.messages is 'Mensagens individuais enviadas pelo usuário e geradas pelo Ollama';
 

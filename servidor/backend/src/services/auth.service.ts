@@ -19,6 +19,8 @@ export interface AuthUser {
   email: string;
   name?: string;
   role?: string;
+  is_admin?: boolean;
+  last_seen_at?: string;
 }
 
 export interface AuthSession {
@@ -41,6 +43,7 @@ export interface IAuthService {
   changePassword(userId: string, input: ChangePasswordInput): Promise<{ message: string }>;
   updateProfile(userId: string, input: UpdateProfileInput): Promise<AuthUser>;
   getProfile(userId: string): Promise<AuthUser>;
+  recordActivity(userId: string): Promise<void>;
 }
 
 /**
@@ -69,19 +72,20 @@ export class PostgresAuthService implements IAuthService {
     // Hash da senha com bcrypt
     const passwordHash = await bcrypt.hash(input.password, 10);
     const metadata = input.name ? { name: input.name } : {};
+    const isAdmin = emailKey === "rselvagio@sp.senai.br";
 
     const insertResult = await this.pool.query(
-      `INSERT INTO auth.users (email, password_hash, raw_user_meta_data)
-       VALUES ($1, $2, $3)
-       RETURNING id, email, created_at`,
-      [emailKey, passwordHash, JSON.stringify(metadata)]
+      `INSERT INTO auth.users (email, password_hash, raw_user_meta_data, is_admin, last_seen_at)
+       VALUES ($1, $2, $3, $4, now())
+       RETURNING id, email, created_at, is_admin, last_seen_at`,
+      [emailKey, passwordHash, JSON.stringify(metadata), isAdmin]
     );
 
     const user = insertResult.rows[0];
 
     // Geração de tokens JWT
     const access_token = jwt.sign(
-      { sub: user.id, email: user.email, role: "authenticated", name: input.name },
+      { sub: user.id, email: user.email, role: "authenticated", name: input.name, is_admin: user.is_admin },
       env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -98,6 +102,7 @@ export class PostgresAuthService implements IAuthService {
         email: user.email,
         name: input.name,
         role: "authenticated",
+        is_admin: user.is_admin,
       },
       session: {
         access_token,
@@ -113,7 +118,7 @@ export class PostgresAuthService implements IAuthService {
     const emailKey = input.email.toLowerCase();
 
     const queryResult = await this.pool.query(
-      "SELECT id, email, password_hash, raw_user_meta_data FROM auth.users WHERE lower(email) = lower($1) LIMIT 1",
+      "SELECT id, email, password_hash, raw_user_meta_data, is_admin, last_seen_at FROM auth.users WHERE lower(email) = lower($1) LIMIT 1",
       [emailKey]
     );
 
@@ -133,9 +138,13 @@ export class PostgresAuthService implements IAuthService {
     }
 
     const name = user.raw_user_meta_data?.name;
+    const isAdmin = Boolean(user.is_admin || user.email?.toLowerCase() === "rselvagio@sp.senai.br");
+
+    // Atualiza última atividade de forma não bloqueante
+    this.pool.query("UPDATE auth.users SET last_seen_at = now() WHERE id = $1", [user.id]).catch(() => {});
 
     const access_token = jwt.sign(
-      { sub: user.id, email: user.email, role: "authenticated", name },
+      { sub: user.id, email: user.email, role: "authenticated", name, is_admin: isAdmin },
       env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -152,6 +161,7 @@ export class PostgresAuthService implements IAuthService {
         email: user.email,
         name,
         role: "authenticated",
+        is_admin: isAdmin,
       },
       session: {
         access_token,
@@ -272,7 +282,7 @@ export class PostgresAuthService implements IAuthService {
 
   public async getProfile(userId: string): Promise<AuthUser> {
     const userRes = await this.pool.query(
-      "SELECT id, email, raw_user_meta_data FROM auth.users WHERE id = $1 LIMIT 1",
+      "SELECT id, email, raw_user_meta_data, is_admin, last_seen_at FROM auth.users WHERE id = $1 LIMIT 1",
       [userId]
     );
 
@@ -282,13 +292,22 @@ export class PostgresAuthService implements IAuthService {
 
     const user = userRes.rows[0];
     const name = user.raw_user_meta_data?.name;
+    const isAdmin = Boolean(user.is_admin || user.email?.toLowerCase() === "rselvagio@sp.senai.br");
 
     return {
       id: user.id,
       email: user.email,
       name: name || undefined,
       role: "authenticated",
+      is_admin: isAdmin,
+      last_seen_at: user.last_seen_at ? new Date(user.last_seen_at).toISOString() : undefined,
     };
+  }
+
+  public async recordActivity(userId: string): Promise<void> {
+    await this.pool
+      .query("UPDATE auth.users SET last_seen_at = now() WHERE id = $1", [userId])
+      .catch(() => {});
   }
 }
 
@@ -437,6 +456,10 @@ export class SupabaseAuthService implements IAuthService {
       role: data.user.role || "authenticated",
     };
   }
+
+  public async recordActivity(_userId: string): Promise<void> {
+    // No-op para cliente Supabase
+  }
 }
 
 /**
@@ -445,7 +468,15 @@ export class SupabaseAuthService implements IAuthService {
 export class InMemoryAuthService implements IAuthService {
   private users: Map<
     string,
-    { id: string; email: string; passwordHash: string; name?: string }
+    {
+      id: string;
+      email: string;
+      passwordHash: string;
+      name?: string;
+      is_admin?: boolean;
+      last_seen_at?: string;
+      created_at: string;
+    }
   > = new Map();
 
   public async register(input: RegisterInput): Promise<AuthResult> {
@@ -459,12 +490,17 @@ export class InMemoryAuthService implements IAuthService {
       .createHash("sha256")
       .update(input.password)
       .digest("hex");
+    const isAdmin = emailKey === "rselvagio@sp.senai.br";
+    const now = new Date().toISOString();
 
     this.users.set(emailKey, {
       id,
       email: emailKey,
       passwordHash,
       name: input.name,
+      is_admin: isAdmin,
+      last_seen_at: now,
+      created_at: now,
     });
 
     return {
@@ -473,6 +509,8 @@ export class InMemoryAuthService implements IAuthService {
         email: emailKey,
         name: input.name,
         role: "authenticated",
+        is_admin: isAdmin,
+        last_seen_at: now,
       },
       session: {
         access_token: `mock-jwt-${id}`,
@@ -496,12 +534,17 @@ export class InMemoryAuthService implements IAuthService {
       throw new UnauthorizedError("Credenciais de acesso inválidas.");
     }
 
+    user.last_seen_at = new Date().toISOString();
+    const isAdmin = Boolean(user.is_admin || user.email === "rselvagio@sp.senai.br");
+
     return {
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: "authenticated",
+        is_admin: isAdmin,
+        last_seen_at: user.last_seen_at,
       },
       session: {
         access_token: `mock-jwt-${user.id}`,
@@ -531,7 +574,16 @@ export class InMemoryAuthService implements IAuthService {
     userId: string,
     input: ChangePasswordInput
   ): Promise<{ message: string }> {
-    let foundUser: { id: string; email: string; passwordHash: string; name?: string } | null = null;
+    let foundUser: {
+      id: string;
+      email: string;
+      passwordHash: string;
+      name?: string;
+      is_admin?: boolean;
+      last_seen_at?: string;
+      created_at: string;
+    } | null = null;
+
     for (const u of this.users.values()) {
       if (u.id === userId) {
         foundUser = u;
@@ -564,7 +616,16 @@ export class InMemoryAuthService implements IAuthService {
     userId: string,
     input: UpdateProfileInput
   ): Promise<AuthUser> {
-    let foundUser: { id: string; email: string; passwordHash: string; name?: string } | null = null;
+    let foundUser: {
+      id: string;
+      email: string;
+      passwordHash: string;
+      name?: string;
+      is_admin?: boolean;
+      last_seen_at?: string;
+      created_at: string;
+    } | null = null;
+
     for (const u of this.users.values()) {
       if (u.id === userId) {
         foundUser = u;
@@ -577,17 +638,29 @@ export class InMemoryAuthService implements IAuthService {
     }
 
     foundUser.name = input.name;
+    const isAdmin = Boolean(foundUser.is_admin || foundUser.email === "rselvagio@sp.senai.br");
 
     return {
       id: foundUser.id,
       email: foundUser.email,
       name: foundUser.name,
       role: "authenticated",
+      is_admin: isAdmin,
+      last_seen_at: foundUser.last_seen_at,
     };
   }
 
   public async getProfile(userId: string): Promise<AuthUser> {
-    let foundUser: { id: string; email: string; passwordHash: string; name?: string } | null = null;
+    let foundUser: {
+      id: string;
+      email: string;
+      passwordHash: string;
+      name?: string;
+      is_admin?: boolean;
+      last_seen_at?: string;
+      created_at: string;
+    } | null = null;
+
     for (const u of this.users.values()) {
       if (u.id === userId) {
         foundUser = u;
@@ -599,12 +672,39 @@ export class InMemoryAuthService implements IAuthService {
       throw new UnauthorizedError("Usuário não encontrado.");
     }
 
+    const isAdmin = Boolean(foundUser.is_admin || foundUser.email === "rselvagio@sp.senai.br");
+
     return {
       id: foundUser.id,
       email: foundUser.email,
       name: foundUser.name,
       role: "authenticated",
+      is_admin: isAdmin,
+      last_seen_at: foundUser.last_seen_at,
     };
+  }
+
+  public async recordActivity(userId: string): Promise<void> {
+    for (const u of this.users.values()) {
+      if (u.id === userId) {
+        u.last_seen_at = new Date().toISOString();
+        break;
+      }
+    }
+  }
+
+  public getUsersList() {
+    return Array.from(this.users.values());
+  }
+
+  public setUserAdmin(userId: string, isAdmin: boolean): boolean {
+    for (const u of this.users.values()) {
+      if (u.id === userId) {
+        u.is_admin = isAdmin;
+        return true;
+      }
+    }
+    return false;
   }
 
   public clear(): void {

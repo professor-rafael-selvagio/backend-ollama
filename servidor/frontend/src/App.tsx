@@ -3,11 +3,13 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ChatDashboard } from "./pages/ChatDashboard";
-import { Bot, Loader2 } from "lucide-react";
+import { AdminDashboard } from "./pages/AdminDashboard";
+import { Loader2 } from "lucide-react";
 
 const AppContent: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isAdmin } = useAuth();
   const [authView, setAuthView] = useState<"login" | "register">("login");
+  const [currentView, setCurrentView] = useState<"chat" | "admin">("chat");
 
   if (isLoading) {
     return (
@@ -33,7 +35,11 @@ const AppContent: React.FC = () => {
     );
   }
 
-  return <ChatDashboard />;
+  if (currentView === "admin" && isAdmin) {
+    return <AdminDashboard onBackToChat={() => setCurrentView("chat")} />;
+  }
+
+  return <ChatDashboard onOpenAdmin={() => setCurrentView("admin")} />;
 };
 
 export const App: React.FC = () => {

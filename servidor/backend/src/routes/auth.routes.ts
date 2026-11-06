@@ -13,6 +13,9 @@ authRoutes.post("/refresh", authRateLimiter, defaultAuthController.refresh);
 // Rota protegida para consultar perfil do usuário autenticado
 authRoutes.get("/me", authMiddleware, defaultAuthController.me);
 
+// Rota protegida para sinalizar atividade recente (heartbeat)
+authRoutes.post("/heartbeat", authMiddleware, defaultAuthController.heartbeat);
+
 // Rota protegida para atualizar perfil (nome) do usuário
 authRoutes.patch("/profile", authMiddleware, defaultAuthController.updateProfile);
 

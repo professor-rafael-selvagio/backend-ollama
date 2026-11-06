@@ -118,6 +118,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSwitchToRegister }) => {
             Cadastre-se gratuitamente
           </button>
         </div>
+
+        {/* Rodapé discreto com créditos */}
+        <p className="mt-8 pt-4 border-t border-slate-800/60 text-center text-[11px] text-slate-400">
+          Desenvolvido pelo{" "}
+          <span className="text-slate-300 font-medium">Prof. Esp. Rafael Selvagio</span>, utilizando IA.
+        </p>
       </div>
     </div>
   );

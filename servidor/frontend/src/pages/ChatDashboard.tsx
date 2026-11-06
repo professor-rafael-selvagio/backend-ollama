@@ -15,7 +15,11 @@ import { ProjectModal } from "../components/ProjectModal";
 import { RenameModal } from "../components/RenameModal";
 import { UserProfileModal } from "../components/UserProfileModal";
 
-export const ChatDashboard: React.FC = () => {
+interface ChatDashboardProps {
+  onOpenAdmin?: () => void;
+}
+
+export const ChatDashboard: React.FC<ChatDashboardProps> = ({ onOpenAdmin }) => {
   const { user, logout } = useAuth();
 
   // Estados principais
@@ -246,6 +250,7 @@ export const ChatDashboard: React.FC = () => {
         user={user}
         onLogout={logout}
         onOpenProfileModal={() => setIsProfileModalOpen(true)}
+        onOpenAdmin={onOpenAdmin}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
       />

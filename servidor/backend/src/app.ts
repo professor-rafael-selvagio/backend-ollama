@@ -10,6 +10,7 @@ import { ollamaRoutes } from "./routes/ollama.routes";
 import { conversationRoutes } from "./routes/conversation.routes";
 import { projectRoutes } from "./routes/project.routes";
 import { authRoutes } from "./routes/auth.routes";
+import { adminRoutes } from "./routes/admin.routes";
 import { ForbiddenError, NotFoundError } from "./utils/errors";
 
 export function createApp(): Express {
@@ -68,6 +69,7 @@ export function createApp(): Express {
   app.use("/api/projects", projectRoutes);
   app.use("/api/ollama", ollamaRoutes);
   app.use("/api/conversations", conversationRoutes);
+  app.use("/api/admin", adminRoutes);
 
   // 7. Rota não encontrada (404)
   app.use((_req: Request, _res: Response, next: NextFunction) => {
