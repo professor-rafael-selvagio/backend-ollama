@@ -30,3 +30,4 @@ export function getDbPool(): Pool | null {
 export function setDbPoolForTesting(pool: Pool | null): void {
   poolInstance = pool;
 }
+
