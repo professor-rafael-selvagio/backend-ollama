@@ -1,6 +1,10 @@
 import crypto from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { Pool } from "pg";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { env } from "../config/env";
+import { getDbPool } from "../config/database";
 import { RegisterInput, LoginInput } from "../schemas/auth.schema";
 import { UnauthorizedError, ValidationError } from "../utils/errors";
 import { logger } from "../utils/logger";
@@ -32,7 +36,174 @@ export interface IAuthService {
 }
 
 /**
- * Serviço de autenticação conectado diretamente ao Supabase Auth
+ * Serviço de autenticação conectado diretamente ao banco de dados PostgreSQL
+ */
+export class PostgresAuthService implements IAuthService {
+  private pool: Pool;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+  }
+
+  public async register(input: RegisterInput): Promise<AuthResult> {
+    const emailKey = input.email.toLowerCase();
+
+    // Verifica se já existe usuário cadastrado
+    const existing = await this.pool.query(
+      "SELECT id FROM auth.users WHERE lower(email) = lower($1) LIMIT 1",
+      [emailKey]
+    );
+
+    if (existing.rowCount && existing.rowCount > 0) {
+      throw new ValidationError("Este e-mail já está cadastrado.");
+    }
+
+    // Hash da senha com bcrypt
+    const passwordHash = await bcrypt.hash(input.password, 10);
+    const metadata = input.name ? { name: input.name } : {};
+
+    const insertResult = await this.pool.query(
+      `INSERT INTO auth.users (email, password_hash, raw_user_meta_data)
+       VALUES ($1, $2, $3)
+       RETURNING id, email, created_at`,
+      [emailKey, passwordHash, JSON.stringify(metadata)]
+    );
+
+    const user = insertResult.rows[0];
+
+    // Geração de tokens JWT
+    const access_token = jwt.sign(
+      { sub: user.id, email: user.email, role: "authenticated", name: input.name },
+      env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    const refresh_token = jwt.sign(
+      { sub: user.id, type: "refresh" },
+      env.JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: input.name,
+        role: "authenticated",
+      },
+      session: {
+        access_token,
+        refresh_token,
+        expires_in: 7 * 24 * 3600,
+        token_type: "Bearer",
+      },
+      message: "Usuário registrado com sucesso.",
+    };
+  }
+
+  public async login(input: LoginInput): Promise<AuthResult> {
+    const emailKey = input.email.toLowerCase();
+
+    const queryResult = await this.pool.query(
+      "SELECT id, email, password_hash, raw_user_meta_data FROM auth.users WHERE lower(email) = lower($1) LIMIT 1",
+      [emailKey]
+    );
+
+    if (!queryResult.rowCount || queryResult.rowCount === 0) {
+      throw new UnauthorizedError("Credenciais de acesso inválidas.");
+    }
+
+    const user = queryResult.rows[0];
+
+    if (!user.password_hash) {
+      throw new UnauthorizedError("Credenciais de acesso inválidas.");
+    }
+
+    const isValidPassword = await bcrypt.compare(input.password, user.password_hash);
+    if (!isValidPassword) {
+      throw new UnauthorizedError("Credenciais de acesso inválidas.");
+    }
+
+    const name = user.raw_user_meta_data?.name;
+
+    const access_token = jwt.sign(
+      { sub: user.id, email: user.email, role: "authenticated", name },
+      env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    const refresh_token = jwt.sign(
+      { sub: user.id, type: "refresh" },
+      env.JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name,
+        role: "authenticated",
+      },
+      session: {
+        access_token,
+        refresh_token,
+        expires_in: 7 * 24 * 3600,
+        token_type: "Bearer",
+      },
+      message: "Login realizado com sucesso.",
+    };
+  }
+
+  public async refreshSession(refreshToken: string): Promise<AuthSession> {
+    try {
+      const decoded = jwt.verify(refreshToken, env.JWT_SECRET) as {
+        sub: string;
+        type?: string;
+      };
+
+      if (decoded.type !== "refresh") {
+        throw new UnauthorizedError("Refresh token inválido ou expirado.");
+      }
+
+      const userRes = await this.pool.query(
+        "SELECT id, email, raw_user_meta_data FROM auth.users WHERE id = $1 LIMIT 1",
+        [decoded.sub]
+      );
+
+      if (!userRes.rowCount || userRes.rowCount === 0) {
+        throw new UnauthorizedError("Usuário não encontrado.");
+      }
+
+      const user = userRes.rows[0];
+      const name = user.raw_user_meta_data?.name;
+
+      const access_token = jwt.sign(
+        { sub: user.id, email: user.email, role: "authenticated", name },
+        env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      const new_refresh_token = jwt.sign(
+        { sub: user.id, type: "refresh" },
+        env.JWT_SECRET,
+        { expiresIn: "30d" }
+      );
+
+      return {
+        access_token,
+        refresh_token: new_refresh_token,
+        expires_in: 7 * 24 * 3600,
+        token_type: "Bearer",
+      };
+    } catch {
+      throw new UnauthorizedError("Refresh token inválido ou expirado.");
+    }
+  }
+}
+
+/**
+ * Serviço de autenticação conectado ao Supabase Auth (caso use Supabase em nuvem)
  */
 export class SupabaseAuthService implements IAuthService {
   private client: SupabaseClient;
@@ -230,7 +401,14 @@ export class InMemoryAuthService implements IAuthService {
 // Inicializa a instância padrão de acordo com as variáveis de ambiente
 let defaultAuthServiceInstance: IAuthService;
 
-if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) {
+if (env.DATABASE_URL) {
+  const pool = getDbPool();
+  if (pool) {
+    defaultAuthServiceInstance = new PostgresAuthService(pool);
+  } else {
+    defaultAuthServiceInstance = new InMemoryAuthService();
+  }
+} else if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
     auth: {
       persistSession: false,
@@ -240,7 +418,7 @@ if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) {
   defaultAuthServiceInstance = new SupabaseAuthService(supabase);
 } else {
   logger.info(
-    "Credenciais do Supabase não configuradas. Utilizando AuthService em memória para desenvolvimento local."
+    "Credenciais do Supabase/PostgreSQL não configuradas. Utilizando AuthService em memória para desenvolvimento local."
   );
   defaultAuthServiceInstance = new InMemoryAuthService();
 }
@@ -252,4 +430,3 @@ export function setAuthServiceForTesting(service: IAuthService): void {
 export function getAuthService(): IAuthService {
   return defaultAuthServiceInstance;
 }
-

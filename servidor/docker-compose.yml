@@ -1,21 +1,44 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ollama-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ollama_secure_password_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-ollama_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/migrations/20261106_create_chat_tables.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    networks:
+      - ia-interna
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ollama_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ollama-backend
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-ollama_secure_password_2026}@postgres:5432/${POSTGRES_DB:-ollama_db}
+      - JWT_SECRET=${JWT_SECRET:-ollama_jwt_super_secret_key_change_me_in_prod}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120000}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173}
       - ALLOWED_MODELS=${ALLOWED_MODELS:-}
-      - SUPABASE_URL=${SUPABASE_URL:-}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
       - REQUIRE_AUTH=${REQUIRE_AUTH:-false}
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
       - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
@@ -30,8 +53,11 @@ services:
       retries: 3
       start_period: 10s
 
+volumes:
+  postgres_data:
+    driver: local
+
 networks:
   ia-interna:
     external: true
     name: ia-interna
-

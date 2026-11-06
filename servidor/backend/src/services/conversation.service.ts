@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { Pool } from "pg";
 import { env } from "../config/env";
+import { getDbPool } from "../config/database";
 import {
   Conversation,
   ConversationWithMessages,
@@ -145,6 +147,122 @@ export class InMemoryConversationRepository implements IConversationRepository {
   public clear(): void {
     this.conversations.clear();
     this.messages.clear();
+  }
+}
+
+/**
+ * Repositório conectado diretamente ao banco de dados PostgreSQL
+ */
+export class PostgresConversationRepository implements IConversationRepository {
+  private pool: Pool;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+  }
+
+  public async createConversation(
+    userId: string,
+    model: string,
+    title = "Nova Conversa"
+  ): Promise<Conversation> {
+    const res = await this.pool.query(
+      `INSERT INTO public.conversations (user_id, model, title)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [userId, model, title]
+    );
+    return res.rows[0] as Conversation;
+  }
+
+  public async listConversations(userId: string): Promise<Conversation[]> {
+    const res = await this.pool.query(
+      `SELECT * FROM public.conversations
+       WHERE user_id = $1
+       ORDER BY updated_at DESC`,
+      [userId]
+    );
+    return res.rows as Conversation[];
+  }
+
+  public async getConversation(
+    userId: string,
+    conversationId: string
+  ): Promise<Conversation | null> {
+    const res = await this.pool.query(
+      `SELECT * FROM public.conversations
+       WHERE id = $1 AND user_id = $2
+       LIMIT 1`,
+      [conversationId, userId]
+    );
+    if (!res.rowCount || res.rowCount === 0) return null;
+    return res.rows[0] as Conversation;
+  }
+
+  public async getMessages(conversationId: string): Promise<DatabaseMessage[]> {
+    const res = await this.pool.query(
+      `SELECT * FROM public.messages
+       WHERE conversation_id = $1
+       ORDER BY created_at ASC`,
+      [conversationId]
+    );
+    return res.rows as DatabaseMessage[];
+  }
+
+  public async addMessage(
+    conversationId: string,
+    userId: string,
+    role: "system" | "user" | "assistant",
+    content: string,
+    tokens?: number
+  ): Promise<DatabaseMessage> {
+    const res = await this.pool.query(
+      `INSERT INTO public.messages (conversation_id, user_id, role, content, tokens)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [conversationId, userId, role, content, tokens ?? null]
+    );
+
+    await this.pool.query(
+      `UPDATE public.conversations
+       SET updated_at = now()
+       WHERE id = $1`,
+      [conversationId]
+    );
+
+    return res.rows[0] as DatabaseMessage;
+  }
+
+  public async updateTitle(
+    userId: string,
+    conversationId: string,
+    title: string
+  ): Promise<Conversation> {
+    const res = await this.pool.query(
+      `UPDATE public.conversations
+       SET title = $3, updated_at = now()
+       WHERE id = $1 AND user_id = $2
+       RETURNING *`,
+      [conversationId, userId, title]
+    );
+
+    if (!res.rowCount || res.rowCount === 0) {
+      throw new NotFoundError("Conversa não encontrada");
+    }
+
+    return res.rows[0] as Conversation;
+  }
+
+  public async deleteConversation(
+    userId: string,
+    conversationId: string
+  ): Promise<boolean> {
+    const res = await this.pool.query(
+      `DELETE FROM public.conversations
+       WHERE id = $1 AND user_id = $2`,
+      [conversationId, userId]
+    );
+
+    return (res.rowCount ?? 0) > 0;
   }
 }
 
@@ -319,6 +437,13 @@ export class ConversationService {
   ) {
     if (repository) {
       this.repository = repository;
+    } else if (env.DATABASE_URL) {
+      const pool = getDbPool();
+      if (pool) {
+        this.repository = new PostgresConversationRepository(pool);
+      } else {
+        this.repository = new InMemoryConversationRepository();
+      }
     } else if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) {
       const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
         auth: { persistSession: false },

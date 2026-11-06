@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { UnauthorizedError } from "../utils/errors";
 import { logger } from "../utils/logger";
@@ -83,6 +84,30 @@ export async function authMiddleware(
     } catch (err: unknown) {
       logger.error("Falha ao comunicar com o serviço de autenticação Supabase", err as Error);
       return next(new UnauthorizedError("Falha na validação do token com o provedor de autenticação."));
+    }
+  }
+
+  // Se o PostgreSQL próprio estiver configurado via DATABASE_URL, valida o JWT com JWT_SECRET
+  if (env.DATABASE_URL) {
+    try {
+      const decoded = jwt.verify(token, env.JWT_SECRET) as {
+        sub: string;
+        email: string;
+        role?: string;
+        name?: string;
+      };
+
+      req.user = {
+        id: decoded.sub,
+        email: decoded.email,
+        role: decoded.role || "authenticated",
+        user_metadata: { name: decoded.name },
+      };
+
+      return next();
+    } catch {
+      logger.warn("Tentativa de acesso com token JWT inválido ou expirado");
+      return next(new UnauthorizedError("Token de autenticação inválido ou expirado."));
     }
   }
 

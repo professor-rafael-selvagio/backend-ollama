@@ -38,6 +38,14 @@ const envSchema = z.object({
         .map((s) => s.trim())
         .filter(Boolean)
     ),
+  DATABASE_URL: z
+    .string()
+    .optional()
+    .transform((val) => (val && val.trim().length > 0 ? val.trim() : undefined)),
+  JWT_SECRET: z
+    .string()
+    .default("ollama_jwt_super_secret_key_change_me_in_prod")
+    .transform((val) => val.trim()),
   SUPABASE_URL: z
     .string()
     .optional()
