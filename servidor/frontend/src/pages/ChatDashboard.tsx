@@ -257,6 +257,11 @@ export const ChatDashboard: React.FC = () => {
           chatTitle={activeConversation?.title}
           project={activeProject}
           ollamaAvailable={ollamaAvailable}
+          onOpenRenameModal={
+            activeConversation
+              ? () => handleOpenRenameModal(activeConversation)
+              : undefined
+          }
         />
 
         <ChatArea

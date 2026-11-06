@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { X, Edit3, Loader2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Edit3, FolderInput, Loader2 } from "lucide-react";
 import { Conversation, Project } from "../types";
 
 interface RenameModalProps {
@@ -24,6 +24,14 @@ export const RenameModal: React.FC<RenameModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (conversation) {
+      setTitle(conversation.title || "");
+      setSelectedProjectId(conversation.project_id || null);
+      setError(null);
+    }
+  }, [conversation, isOpen]);
+
   if (!isOpen || !conversation) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,10 +55,10 @@ export const RenameModal: React.FC<RenameModalProps> = ({
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2.5 text-white font-semibold text-lg">
-            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300">
-              <Edit3 size={18} />
+            <div className="w-8 h-8 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
+              <FolderInput size={18} />
             </div>
-            <span>Configurações da Conversa</span>
+            <span>Renomear ou Mover Conversa</span>
           </div>
           <button
             onClick={onClose}

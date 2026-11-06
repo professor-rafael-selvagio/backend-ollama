@@ -1,5 +1,5 @@
 import React from "react";
-import { Menu, Cpu, Activity, Folder } from "lucide-react";
+import { Menu, Cpu, Folder, FolderInput } from "lucide-react";
 import { OllamaModel, Project } from "../types";
 
 interface HeaderProps {
@@ -10,6 +10,7 @@ interface HeaderProps {
   chatTitle?: string;
   project?: Project | null;
   ollamaAvailable?: boolean;
+  onOpenRenameModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   chatTitle,
   project,
   ollamaAvailable = true,
+  onOpenRenameModal,
 }) => {
   return (
     <header className="h-14 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-4 flex items-center justify-between shrink-0">
@@ -49,6 +51,19 @@ export const Header: React.FC<HeaderProps> = ({
           <h1 className="text-sm font-semibold text-white truncate">
             {chatTitle || "Novo Chat"}
           </h1>
+
+          {onOpenRenameModal && (
+            <button
+              onClick={onOpenRenameModal}
+              title="Mover este chat para um projeto ou renomear"
+              className="ml-1.5 px-2 py-1 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-lg border border-slate-800/70 transition-colors flex items-center gap-1.5 text-xs cursor-pointer shrink-0"
+            >
+              <FolderInput size={13} className="text-brand-400" />
+              <span className="hidden sm:inline text-[11px]">
+                {project ? "Mover Projeto" : "Organizar em Projeto"}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 

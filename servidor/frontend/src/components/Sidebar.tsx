@@ -10,6 +10,7 @@ import {
   Trash2,
   Edit2,
   Folder,
+  FolderInput,
   Layers,
   Sparkles,
 } from "lucide-react";
@@ -321,10 +322,10 @@ const ChatItem: React.FC<ChatItemProps> = ({
             e.stopPropagation();
             onRename();
           }}
-          title="Renomear ou mover para projeto"
+          title="Mover para projeto ou renomear"
           className="p-1 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded"
         >
-          <Edit2 size={12} />
+          <FolderInput size={12} />
         </button>
         <button
           onClick={(e) => {
