@@ -1,16 +1,35 @@
 import { app } from "./app";
 import { env } from "./config/env";
 import { logger } from "./utils/logger";
+import { getDbPool, initializeDatabase } from "./config/database";
 
-const server = app.listen(env.PORT, "0.0.0.0", () => {
-  logger.info(`🚀 Backend Seguro Ollama iniciado com sucesso!`, {
-    port: env.PORT,
-    environment: env.NODE_ENV,
-    ollamaBaseUrl: env.OLLAMA_BASE_URL,
-    allowedOrigins: env.ALLOWED_ORIGINS,
-    allowedModels: env.ALLOWED_MODELS.length > 0 ? env.ALLOWED_MODELS : "TODOS (irrestrito)",
-    authRequired: env.REQUIRE_AUTH,
+let server: ReturnType<typeof app.listen>;
+
+async function start() {
+  const pool = getDbPool();
+  if (pool) {
+    try {
+      await initializeDatabase(pool);
+    } catch (err) {
+      logger.error("Erro ao aplicar sincronização inicial de tabelas do banco", err as Error);
+    }
+  }
+
+  server = app.listen(env.PORT, "0.0.0.0", () => {
+    logger.info(`🚀 Backend Seguro Ollama iniciado com sucesso!`, {
+      port: env.PORT,
+      environment: env.NODE_ENV,
+      ollamaBaseUrl: env.OLLAMA_BASE_URL,
+      allowedOrigins: env.ALLOWED_ORIGINS,
+      allowedModels: env.ALLOWED_MODELS.length > 0 ? env.ALLOWED_MODELS : "TODOS (irrestrito)",
+      authRequired: env.REQUIRE_AUTH,
+    });
   });
+}
+
+start().catch((err) => {
+  logger.error("Falha fatal na inicialização do servidor HTTP", err as Error);
+  process.exit(1);
 });
 
 // Tratamento de encerramento gracioso (Graceful Shutdown)
