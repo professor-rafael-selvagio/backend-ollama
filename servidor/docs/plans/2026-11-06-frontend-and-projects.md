@@ -34,11 +34,11 @@
 - Modify: `servidor/backend/src/types/index.ts`
 - Modify: `servidor/backend/src/services/conversation.service.ts`
 
-- [ ] Atualizar migration SQL adicionando a tabela `public.projects` e a coluna `project_id` em `public.conversations`.
-- [ ] Definir tipos `Project`, `CreateProjectInput`, `UpdateProjectInput` em `src/types/index.ts`.
-- [ ] Criar schemas Zod em `src/schemas/project.schema.ts` para validação de entrada.
-- [ ] Implementar `ProjectService` com suporte a `PostgresProjectRepository` e `InMemoryProjectRepository`.
-- [ ] Atualizar `ConversationService` para suportar atribuição de `project_id` na criação e filtragem por projeto na listagem.
+- [x] Atualizar migration SQL adicionando a tabela `public.projects` e a coluna `project_id` em `public.conversations`.
+- [x] Definir tipos `Project`, `CreateProjectInput`, `UpdateProjectInput` em `src/types/index.ts`.
+- [x] Criar schemas Zod em `src/schemas/project.schema.ts` para validação de entrada.
+- [x] Implementar `ProjectService` com suporte a `PostgresProjectRepository` e `InMemoryProjectRepository`.
+- [x] Atualizar `ConversationService` para suportar atribuição de `project_id` na criação e filtragem por projeto na listagem.
 
 ---
 
@@ -50,10 +50,10 @@
 - Modify: `servidor/backend/src/app.ts`
 - Create: `servidor/backend/tests/project.test.ts`
 
-- [ ] Criar `ProjectController` com métodos `create`, `list`, `getById`, `update`, `delete`.
-- [ ] Criar `project.routes.ts` com proteção de `authMiddleware` e registrar em `app.ts` sob `/api/projects`.
-- [ ] Escrever suíte de testes em `tests/project.test.ts` validando criação, listagem, atualização, exclusão e isolamento entre usuários.
-- [ ] Executar `npm test` e `npm run build` garantindo 100% de aprovação.
+- [x] Criar `ProjectController` com métodos `create`, `list`, `getById`, `update`, `delete`.
+- [x] Criar `project.routes.ts` com proteção de `authMiddleware` e registrar em `app.ts` sob `/api/projects`.
+- [x] Escrever suíte de testes em `tests/project.test.ts` validando criação, listagem, atualização, exclusão e isolamento entre usuários.
+- [x] Executar `npm test` e `npm run build` garantindo 100% de aprovação.
 
 ---
 
@@ -69,9 +69,9 @@
 - Create: `servidor/frontend/src/main.tsx`
 - Create: `servidor/frontend/src/index.css`
 
-- [ ] Inicializar estrutura do frontend com React 18, TypeScript, Tailwind CSS e Lucide Icons.
-- [ ] Configurar proxy no Vite para encaminhar requisições `/api` para `http://localhost:3000` em dev.
-- [ ] Instalar dependências e validar build de teste com `npm run build`.
+- [x] Inicializar estrutura do frontend com React 18, TypeScript, Tailwind CSS e Lucide Icons.
+- [x] Configurar proxy no Vite para encaminhar requisições `/api` para `http://localhost:3000` em dev.
+- [x] Instalar dependências e validar build de teste com `npm run build`.
 
 ---
 
@@ -84,9 +84,9 @@
 - Create: `servidor/frontend/src/pages/LoginPage.tsx`
 - Create: `servidor/frontend/src/pages/RegisterPage.tsx`
 
-- [ ] Criar cliente HTTP com interceptor para injetar cabeçalho `Authorization: Bearer <token>` e tratar 401.
-- [ ] Implementar `AuthContext` com métodos `login`, `register`, `logout` e recuperação de sessão salva.
-- [ ] Criar componentes de tela `LoginPage` e `RegisterPage` com design profissional, validação de campos e feedback visual de erros.
+- [x] Criar cliente HTTP com interceptor para injetar cabeçalho `Authorization: Bearer <token>` e tratar 401.
+- [x] Implementar `AuthContext` com métodos `login`, `register`, `logout` e recuperação de sessão salva.
+- [x] Criar componentes de tela `LoginPage` e `RegisterPage` com design profissional, validação de campos e feedback visual de erros.
 
 ---
 
@@ -97,13 +97,13 @@
 - Create: `servidor/frontend/src/components/ProjectModal.tsx`
 - Create: `servidor/frontend/src/components/RenameModal.tsx`
 
-- [ ] Implementar Sidebar com lista colapsável de Projetos e seus respectivos chats.
-- [ ] Implementar seção para Chats Gerais (sem projeto).
-- [ ] Criar botões e modais para:
+- [x] Implementar Sidebar com lista colapsável de Projetos e seus respectivos chats.
+- [x] Implementar seção para Chats Gerais (sem projeto).
+- [x] Criar botões e modais para:
   - Criar novo projeto (com escolha de cor/nome).
   - Criar novo chat dentro do projeto selecionado ou na raiz.
   - Renomear e excluir projeto/chat.
-- [ ] Adicionar rodapé com perfil do usuário logado e botão de Logout.
+- [x] Adicionar rodapé com perfil do usuário logado e botão de Logout.
 
 ---
 
@@ -117,11 +117,11 @@
 - Create: `servidor/frontend/src/pages/ChatDashboard.tsx`
 - Modify: `servidor/frontend/src/App.tsx`
 
-- [ ] Criar `Header` com dropdown para seleção dinâmica de modelos (`qwen2.5:3b`, `deepseek-r1:14b`).
-- [ ] Implementar `ChatArea` com renderização de balões de mensagens em ordem cronológica.
-- [ ] Implementar `MessageItem` com renderização de Markdown, tabelas, blocos de código com destaque de sintaxe e botão de copiar código.
-- [ ] Implementar `ChatInput` com auto-resize de textarea, envio via tecla Enter e indicador visual de carregamento ("IA pensando...").
-- [ ] Integrar tudo no `ChatDashboard` e no componente principal `App.tsx`.
+- [x] Criar `Header` com dropdown para seleção dinâmica de modelos (`qwen2.5:3b`, `deepseek-r1:14b`).
+- [x] Implementar `ChatArea` com renderização de balões de mensagens em ordem cronológica.
+- [x] Implementar `MessageItem` com renderização de Markdown, tabelas, blocos de código com destaque de sintaxe e botão de copiar código.
+- [x] Implementar `ChatInput` com auto-resize de textarea, envio via tecla Enter e indicador visual de carregamento ("IA pensando...").
+- [x] Integrar tudo no `ChatDashboard` e no componente principal `App.tsx`.
 
 ---
 
@@ -134,10 +134,10 @@
 - Modify: `servidor/.env.example`
 - Modify: `servidor/README.md`
 
-- [ ] Criar `Dockerfile` multi-stage para o frontend (builder Node.js -> runtime Nginx Alpine).
-- [ ] Criar `nginx.conf` configurando SPA fallback (`try_files $uri /index.html;`) e gzip.
-- [ ] Adicionar serviço `frontend` no `docker-compose.yml` mapeando porta `8080:80` e conectado à rede `ia-interna`.
-- [ ] Atualizar `.env.example` e documentação com instruções de build e execução.
+- [x] Criar `Dockerfile` multi-stage para o frontend (builder Node.js -> runtime Nginx Alpine).
+- [x] Criar `nginx.conf` configurando SPA fallback (`try_files $uri /index.html;`) e gzip.
+- [x] Adicionar serviço `frontend` no `docker-compose.yml` mapeando porta `8080:80` e conectado à rede `ia-interna`.
+- [x] Atualizar `.env.example` e documentação com instruções de build e execução.
 
 ---
 
@@ -146,8 +146,8 @@
 **Files:**
 - All modified and new files.
 
-- [ ] Executar suíte completa de testes no backend (`npm test`).
-- [ ] Executar build de produção do backend (`npm run build`).
-- [ ] Executar build de produção do frontend (`npm run build`).
-- [ ] Atualizar repositório Git com commit bem estruturado e enviar para o GitHub (`git push`).
+- [x] Executar suíte completa de testes no backend (`npm test`).
+- [x] Executar build de produção do backend (`npm run build`).
+- [x] Executar build de produção do frontend (`npm run build`).
+- [x] Atualizar repositório Git com commit bem estruturado e enviar para o GitHub (`git push`).
 
