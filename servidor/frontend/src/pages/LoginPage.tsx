@@ -36,7 +36,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSwitchToRegister }) => {
             <Bot size={36} className="animate-pulse" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
-            Plataforma Ollama <Sparkles size={18} className="text-amber-400" />
+            SENAI 6.01 <Sparkles size={18} className="text-amber-400" />
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             Entre na sua conta para acessar seus chats e projetos

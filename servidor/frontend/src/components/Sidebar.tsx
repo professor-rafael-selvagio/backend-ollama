@@ -70,22 +70,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-40 w-72 bg-slate-900 border-r border-slate-800/80 flex flex-col transition-transform duration-300 ease-in-out ${
-          isOpenMobile ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-        }`}
+        className={`fixed md:static inset-y-0 left-0 z-40 w-72 bg-slate-900 border-r border-slate-800/80 flex flex-col transition-transform duration-300 ease-in-out ${isOpenMobile ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          }`}
       >
         {/* Topo / Logo */}
         <div className="p-4 border-b border-slate-800/60 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-white shadow-md shadow-brand-600/30">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-rose-400 flex items-center justify-center text-white shadow-md shadow-brand-600/30">
               <Sparkles size={18} />
             </div>
             <div>
               <h2 className="font-bold text-sm tracking-tight text-white leading-tight">
-                Plataforma Ollama
+                SENAI 6.01
               </h2>
               <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
-                Servidor Didático
+                Servidor Didático - IA
               </span>
             </div>
           </div>
@@ -303,11 +302,10 @@ const ChatItem: React.FC<ChatItemProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-        isActive
+      className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${isActive
           ? "bg-slate-800 text-white font-medium"
           : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
-      }`}
+        }`}
     >
       <div className="flex items-center gap-2 truncate flex-1 mr-1">
         <MessageSquare

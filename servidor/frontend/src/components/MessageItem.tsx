@@ -21,7 +21,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
       <div
         className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-white shadow-sm ${
           isAssistant
-            ? "bg-gradient-to-tr from-brand-600 to-emerald-400 text-white"
+            ? "bg-gradient-to-tr from-brand-600 to-rose-400 text-white shadow-md shadow-brand-600/20"
             : "bg-slate-800 text-slate-300 border border-slate-700"
         }`}
       >

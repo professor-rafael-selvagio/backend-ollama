@@ -49,7 +49,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     return (
       <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-6 text-center">
         <div className="max-w-xl space-y-6">
-          <div className="inline-flex p-4 bg-gradient-to-tr from-brand-600/20 to-emerald-400/20 border border-brand-500/30 rounded-3xl text-brand-400 shadow-xl shadow-brand-500/10">
+          <div className="inline-flex p-4 bg-gradient-to-tr from-brand-600/20 to-rose-400/20 border border-brand-500/30 rounded-3xl text-brand-400 shadow-xl shadow-brand-500/10">
             <Bot size={44} />
           </div>
 
@@ -100,7 +100,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
       {isLoading && (
         <div className="py-5 px-4 md:px-6 flex gap-4 bg-slate-900/40 animate-pulse">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center shrink-0 text-white">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-rose-400 flex items-center justify-center shrink-0 text-white shadow-md shadow-brand-600/30">
             <Bot size={18} />
           </div>
           <div className="flex items-center gap-2 text-sm text-slate-400">
