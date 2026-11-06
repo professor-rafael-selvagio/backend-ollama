@@ -14,13 +14,24 @@ export const createConversationSchema = z.object({
     .min(1, "O título não pode ser vazio")
     .max(100, "O título não pode ter mais de 100 caracteres")
     .optional(),
+  project_id: z
+    .string()
+    .uuid("ID do projeto deve ser um UUID válido")
+    .optional()
+    .nullable(),
 });
 
 export const updateConversationSchema = z.object({
   title: z
-    .string({ required_error: "O novo título é obrigatório" })
+    .string()
     .min(1, "O título não pode estar vazio")
-    .max(100, "O título não pode ter mais de 100 caracteres"),
+    .max(100, "O título não pode ter mais de 100 caracteres")
+    .optional(),
+  project_id: z
+    .string()
+    .uuid("ID do projeto deve ser um UUID válido")
+    .optional()
+    .nullable(),
 });
 
 export const sendMessageSchema = z.object({

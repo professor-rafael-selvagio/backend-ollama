@@ -1,0 +1,12 @@
+# Dependências
+node_modules/
+
+# Saída de build
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Arquivos de log e ambiente
+*.local
+*.log
+.DS_Store

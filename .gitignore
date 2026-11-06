@@ -10,6 +10,7 @@ node_modules/
 # Build e saída de compilação
 dist/
 build/
+*.tsbuildinfo
 
 # Testes e cobertura
 coverage/

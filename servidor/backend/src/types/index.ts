@@ -89,13 +89,28 @@ export interface AuthUser {
   user_metadata?: Record<string, unknown>;
 }
 
+export interface Project {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string | null;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Conversation {
   id: string;
   user_id: string;
+  project_id?: string | null;
   title: string;
   model: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectWithConversations extends Project {
+  conversations: Conversation[];
 }
 
 export interface DatabaseMessage {

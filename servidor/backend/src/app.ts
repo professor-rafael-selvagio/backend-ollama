@@ -8,6 +8,7 @@ import { errorHandler } from "./middlewares/error.middleware";
 import { healthRoutes } from "./routes/health.routes";
 import { ollamaRoutes } from "./routes/ollama.routes";
 import { conversationRoutes } from "./routes/conversation.routes";
+import { projectRoutes } from "./routes/project.routes";
 import { authRoutes } from "./routes/auth.routes";
 import { ForbiddenError, NotFoundError } from "./utils/errors";
 
@@ -64,6 +65,7 @@ export function createApp(): Express {
   // 6. Registro de Rotas
   app.use("/health", healthRoutes);
   app.use("/api/auth", authRoutes);
+  app.use("/api/projects", projectRoutes);
   app.use("/api/ollama", ollamaRoutes);
   app.use("/api/conversations", conversationRoutes);
 

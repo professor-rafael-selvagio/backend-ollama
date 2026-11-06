@@ -18,8 +18,13 @@ import {
 import { logger } from "../utils/logger";
 
 export interface IConversationRepository {
-  createConversation(userId: string, model: string, title?: string): Promise<Conversation>;
-  listConversations(userId: string): Promise<Conversation[]>;
+  createConversation(
+    userId: string,
+    model: string,
+    title?: string,
+    projectId?: string | null
+  ): Promise<Conversation>;
+  listConversations(userId: string, projectId?: string | null): Promise<Conversation[]>;
   getConversation(userId: string, conversationId: string): Promise<Conversation | null>;
   getMessages(conversationId: string): Promise<DatabaseMessage[]>;
   addMessage(
@@ -30,6 +35,11 @@ export interface IConversationRepository {
     tokens?: number
   ): Promise<DatabaseMessage>;
   updateTitle(userId: string, conversationId: string, title: string): Promise<Conversation>;
+  updateConversation(
+    userId: string,
+    conversationId: string,
+    input: { title?: string; project_id?: string | null }
+  ): Promise<Conversation>;
   deleteConversation(userId: string, conversationId: string): Promise<boolean>;
 }
 
@@ -43,13 +53,15 @@ export class InMemoryConversationRepository implements IConversationRepository {
   public async createConversation(
     userId: string,
     model: string,
-    title = "Nova Conversa"
+    title = "Nova Conversa",
+    projectId?: string | null
   ): Promise<Conversation> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const conv: Conversation = {
       id,
       user_id: userId,
+      project_id: projectId || null,
       title,
       model,
       created_at: now,
@@ -60,10 +72,17 @@ export class InMemoryConversationRepository implements IConversationRepository {
     return conv;
   }
 
-  public async listConversations(userId: string): Promise<Conversation[]> {
+  public async listConversations(
+    userId: string,
+    projectId?: string | null
+  ): Promise<Conversation[]> {
     const list: Conversation[] = [];
     for (const conv of this.conversations.values()) {
       if (conv.user_id === userId) {
+        if (projectId !== undefined) {
+          if (projectId === null && conv.project_id) continue;
+          if (projectId !== null && conv.project_id !== projectId) continue;
+        }
         list.push(conv);
       }
     }
@@ -123,11 +142,20 @@ export class InMemoryConversationRepository implements IConversationRepository {
     conversationId: string,
     title: string
   ): Promise<Conversation> {
+    return this.updateConversation(userId, conversationId, { title });
+  }
+
+  public async updateConversation(
+    userId: string,
+    conversationId: string,
+    input: { title?: string; project_id?: string | null }
+  ): Promise<Conversation> {
     const conv = await this.getConversation(userId, conversationId);
     if (!conv) {
       throw new NotFoundError("Conversa não encontrada");
     }
-    conv.title = title;
+    if (input.title !== undefined) conv.title = input.title;
+    if (input.project_id !== undefined) conv.project_id = input.project_id;
     conv.updated_at = new Date().toISOString();
     this.conversations.set(conversationId, conv);
     return conv;
@@ -163,25 +191,47 @@ export class PostgresConversationRepository implements IConversationRepository {
   public async createConversation(
     userId: string,
     model: string,
-    title = "Nova Conversa"
+    title = "Nova Conversa",
+    projectId?: string | null
   ): Promise<Conversation> {
     const res = await this.pool.query(
-      `INSERT INTO public.conversations (user_id, model, title)
-       VALUES ($1, $2, $3)
+      `INSERT INTO public.conversations (user_id, model, title, project_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [userId, model, title]
+      [userId, model, title, projectId || null]
     );
     return res.rows[0] as Conversation;
   }
 
-  public async listConversations(userId: string): Promise<Conversation[]> {
-    const res = await this.pool.query(
-      `SELECT * FROM public.conversations
-       WHERE user_id = $1
-       ORDER BY updated_at DESC`,
-      [userId]
-    );
-    return res.rows as Conversation[];
+  public async listConversations(
+    userId: string,
+    projectId?: string | null
+  ): Promise<Conversation[]> {
+    if (projectId === undefined) {
+      const res = await this.pool.query(
+        `SELECT * FROM public.conversations
+         WHERE user_id = $1
+         ORDER BY updated_at DESC`,
+        [userId]
+      );
+      return res.rows as Conversation[];
+    } else if (projectId === null) {
+      const res = await this.pool.query(
+        `SELECT * FROM public.conversations
+         WHERE user_id = $1 AND project_id IS NULL
+         ORDER BY updated_at DESC`,
+        [userId]
+      );
+      return res.rows as Conversation[];
+    } else {
+      const res = await this.pool.query(
+        `SELECT * FROM public.conversations
+         WHERE user_id = $1 AND project_id = $2
+         ORDER BY updated_at DESC`,
+        [userId, projectId]
+      );
+      return res.rows as Conversation[];
+    }
   }
 
   public async getConversation(
@@ -237,16 +287,46 @@ export class PostgresConversationRepository implements IConversationRepository {
     conversationId: string,
     title: string
   ): Promise<Conversation> {
-    const res = await this.pool.query(
-      `UPDATE public.conversations
-       SET title = $3, updated_at = now()
-       WHERE id = $1 AND user_id = $2
-       RETURNING *`,
-      [conversationId, userId, title]
-    );
+    return this.updateConversation(userId, conversationId, { title });
+  }
+
+  public async updateConversation(
+    userId: string,
+    conversationId: string,
+    input: { title?: string; project_id?: string | null }
+  ): Promise<Conversation> {
+    const fields: string[] = [];
+    const values: unknown[] = [conversationId, userId];
+    let idx = 3;
+
+    if (input.title !== undefined) {
+      fields.push(`title = $${idx++}`);
+      values.push(input.title);
+    }
+    if (input.project_id !== undefined) {
+      fields.push(`project_id = $${idx++}`);
+      values.push(input.project_id);
+    }
+
+    if (fields.length === 0) {
+      const existing = await this.getConversation(userId, conversationId);
+      if (!existing) throw new NotFoundError("Conversa não encontrada");
+      return existing;
+    }
+
+    fields.push("updated_at = now()");
+
+    const query = `
+      UPDATE public.conversations
+      SET ${fields.join(", ")}
+      WHERE id = $1 AND user_id = $2
+      RETURNING *
+    `;
+
+    const res = await this.pool.query(query, values);
 
     if (!res.rowCount || res.rowCount === 0) {
-      throw new NotFoundError("Conversa não encontrada");
+      throw new NotFoundError("Conversa não encontrada para atualização");
     }
 
     return res.rows[0] as Conversation;
@@ -279,7 +359,8 @@ export class SupabaseConversationRepository implements IConversationRepository {
   public async createConversation(
     userId: string,
     model: string,
-    title = "Nova Conversa"
+    title = "Nova Conversa",
+    projectId?: string | null
   ): Promise<Conversation> {
     const { data, error } = await this.client
       .from("conversations")
@@ -287,6 +368,7 @@ export class SupabaseConversationRepository implements IConversationRepository {
         user_id: userId,
         model,
         title,
+        project_id: projectId || null,
       })
       .select()
       .single();
@@ -299,12 +381,25 @@ export class SupabaseConversationRepository implements IConversationRepository {
     return data as Conversation;
   }
 
-  public async listConversations(userId: string): Promise<Conversation[]> {
-    const { data, error } = await this.client
+  public async listConversations(
+    userId: string,
+    projectId?: string | null
+  ): Promise<Conversation[]> {
+    let query = this.client
       .from("conversations")
       .select("*")
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
+
+    if (projectId !== undefined) {
+      if (projectId === null) {
+        query = query.is("project_id", null);
+      } else {
+        query = query.eq("project_id", projectId);
+      }
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       logger.error("Erro ao listar conversas no Supabase", error as unknown as Error);
@@ -386,19 +481,30 @@ export class SupabaseConversationRepository implements IConversationRepository {
     conversationId: string,
     title: string
   ): Promise<Conversation> {
+    return this.updateConversation(userId, conversationId, { title });
+  }
+
+  public async updateConversation(
+    userId: string,
+    conversationId: string,
+    input: { title?: string; project_id?: string | null }
+  ): Promise<Conversation> {
+    const updatePayload: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (input.title !== undefined) updatePayload.title = input.title;
+    if (input.project_id !== undefined) updatePayload.project_id = input.project_id;
+
     const { data, error } = await this.client
       .from("conversations")
-      .update({
-        title,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", conversationId)
       .eq("user_id", userId)
       .select()
       .single();
 
     if (error || !data) {
-      logger.error("Erro ao renomear conversa no Supabase", error as unknown as Error);
+      logger.error("Erro ao atualizar conversa no Supabase", error as unknown as Error);
       throw new NotFoundError("Conversa não encontrada para atualização");
     }
 
@@ -461,6 +567,10 @@ export class ConversationService {
     this.repository = repo;
   }
 
+  public getRepository(): IConversationRepository {
+    return this.repository;
+  }
+
   public async create(
     userId: string,
     input: CreateConversationInput
@@ -474,12 +584,24 @@ export class ConversationService {
     return this.repository.createConversation(
       userId,
       input.model,
-      input.title || "Nova Conversa"
+      input.title || "Nova Conversa",
+      input.project_id || null
     );
   }
 
-  public async list(userId: string): Promise<Conversation[]> {
-    return this.repository.listConversations(userId);
+  public async list(
+    userId: string,
+    projectId?: string | null
+  ): Promise<Conversation[]> {
+    return this.repository.listConversations(userId, projectId);
+  }
+
+  public async update(
+    userId: string,
+    conversationId: string,
+    input: { title?: string; project_id?: string | null }
+  ): Promise<Conversation> {
+    return this.repository.updateConversation(userId, conversationId, input);
   }
 
   public async getWithMessages(

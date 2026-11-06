@@ -47,7 +47,7 @@ export class ConversationController {
 
   /**
    * GET /api/conversations
-   * Lista todas as conversas do usuário logado
+   * Lista todas as conversas do usuário logado (opcionalmente filtradas por projeto)
    */
   public list = async (
     req: Request,
@@ -56,7 +56,14 @@ export class ConversationController {
   ): Promise<void> => {
     try {
       const userId = this.getUserId(req);
-      const conversations = await this.service.list(userId);
+      const projectIdQuery = req.query.projectId;
+      let projectId: string | null | undefined = undefined;
+
+      if (projectIdQuery !== undefined) {
+        projectId = projectIdQuery === "null" || projectIdQuery === "" ? null : String(projectIdQuery);
+      }
+
+      const conversations = await this.service.list(userId, projectId);
       res.status(200).json({
         conversations,
         total: conversations.length,
@@ -87,7 +94,7 @@ export class ConversationController {
 
   /**
    * PATCH /api/conversations/:id
-   * Renomeia o título da conversa
+   * Atualiza a conversa (título e/ou projeto)
    */
   public rename = async (
     req: Request,
@@ -97,8 +104,8 @@ export class ConversationController {
     try {
       const userId = this.getUserId(req);
       const { id } = conversationIdParamSchema.parse(req.params);
-      const { title } = updateConversationSchema.parse(req.body);
-      const updated = await this.service.rename(userId, id, title);
+      const payload = updateConversationSchema.parse(req.body);
+      const updated = await this.service.update(userId, id, payload);
       res.status(200).json(updated);
     } catch (error) {
       next(error);
