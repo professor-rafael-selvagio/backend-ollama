@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import {
+  changePasswordSchema,
   loginSchema,
   refreshTokenSchema,
   registerSchema,
@@ -110,6 +111,34 @@ export class AuthController {
         data: {
           user: req.user,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * POST /api/auth/change-password
+   * Altera a senha do usuário autenticado
+   */
+  public changePassword = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user?.id) {
+        throw new UnauthorizedError("Usuário não autenticado.");
+      }
+      const validatedInput = changePasswordSchema.parse(req.body);
+      const result = await this.getService().changePassword(
+        req.user.id,
+        validatedInput
+      );
+
+      res.status(200).json({
+        status: "success",
+        message: result.message,
       });
     } catch (error) {
       next(error);

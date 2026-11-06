@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { getDbPool } from "../config/database";
-import { RegisterInput, LoginInput } from "../schemas/auth.schema";
+import { RegisterInput, LoginInput, ChangePasswordInput } from "../schemas/auth.schema";
 import { UnauthorizedError, ValidationError } from "../utils/errors";
 import { logger } from "../utils/logger";
 
@@ -33,6 +33,7 @@ export interface IAuthService {
   register(input: RegisterInput): Promise<AuthResult>;
   login(input: LoginInput): Promise<AuthResult>;
   refreshSession(refreshToken: string): Promise<AuthSession>;
+  changePassword(userId: string, input: ChangePasswordInput): Promise<{ message: string }>;
 }
 
 /**
@@ -200,6 +201,38 @@ export class PostgresAuthService implements IAuthService {
       throw new UnauthorizedError("Refresh token inválido ou expirado.");
     }
   }
+
+  public async changePassword(
+    userId: string,
+    input: ChangePasswordInput
+  ): Promise<{ message: string }> {
+    const queryResult = await this.pool.query(
+      "SELECT id, password_hash FROM auth.users WHERE id = $1 LIMIT 1",
+      [userId]
+    );
+
+    if (!queryResult.rowCount || queryResult.rowCount === 0) {
+      throw new UnauthorizedError("Usuário não encontrado.");
+    }
+
+    const user = queryResult.rows[0];
+    if (!user.password_hash) {
+      throw new UnauthorizedError("Credenciais de acesso inválidas.");
+    }
+
+    const isValid = await bcrypt.compare(input.currentPassword, user.password_hash);
+    if (!isValid) {
+      throw new UnauthorizedError("A senha atual informada está incorreta.");
+    }
+
+    const newHash = await bcrypt.hash(input.newPassword, 10);
+    await this.pool.query(
+      "UPDATE auth.users SET password_hash = $1, updated_at = now() WHERE id = $2",
+      [newHash, userId]
+    );
+
+    return { message: "Senha alterada com sucesso." };
+  }
 }
 
 /**
@@ -303,6 +336,19 @@ export class SupabaseAuthService implements IAuthService {
       token_type: data.session.token_type || "Bearer",
     };
   }
+
+  public async changePassword(
+    userId: string,
+    input: ChangePasswordInput
+  ): Promise<{ message: string }> {
+    const { error } = await this.client.auth.updateUser({
+      password: input.newPassword,
+    });
+    if (error) {
+      throw new UnauthorizedError(error.message);
+    }
+    return { message: "Senha alterada com sucesso." };
+  }
 }
 
 /**
@@ -391,6 +437,39 @@ export class InMemoryAuthService implements IAuthService {
       expires_in: 3600,
       token_type: "Bearer",
     };
+  }
+
+  public async changePassword(
+    userId: string,
+    input: ChangePasswordInput
+  ): Promise<{ message: string }> {
+    let foundUser: { id: string; email: string; passwordHash: string; name?: string } | null = null;
+    for (const u of this.users.values()) {
+      if (u.id === userId) {
+        foundUser = u;
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      throw new UnauthorizedError("Usuário não encontrado.");
+    }
+
+    const currentHash = crypto
+      .createHash("sha256")
+      .update(input.currentPassword)
+      .digest("hex");
+
+    if (foundUser.passwordHash !== currentHash) {
+      throw new UnauthorizedError("A senha atual informada está incorreta.");
+    }
+
+    foundUser.passwordHash = crypto
+      .createHash("sha256")
+      .update(input.newPassword)
+      .digest("hex");
+
+    return { message: "Senha alterada com sucesso." };
   }
 
   public clear(): void {

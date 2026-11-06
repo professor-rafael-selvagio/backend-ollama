@@ -192,6 +192,87 @@ describe("Módulo de Autenticação (/api/auth)", () => {
     });
   });
 
+  describe("POST /api/auth/change-password (Troca de Senha)", () => {
+    it("deve alterar a senha com sucesso quando fornecida a senha atual correta", async () => {
+      const reg = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "troca.senha@teste.com",
+          password: "senhaAtual123",
+          name: "Troca Senha",
+        });
+
+      const token = reg.body.data.session.access_token;
+
+      const changeRes = await request(app)
+        .post("/api/auth/change-password")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          currentPassword: "senhaAtual123",
+          newPassword: "novaSenhaSegura456",
+        });
+
+      expect(changeRes.status).toBe(200);
+      expect(changeRes.body).toHaveProperty("status", "success");
+      expect(changeRes.body.message).toContain("sucesso");
+
+      // Verifica se login com a nova senha funciona
+      const loginRes = await request(app)
+        .post("/api/auth/login")
+        .send({
+          email: "troca.senha@teste.com",
+          password: "novaSenhaSegura456",
+        });
+
+      expect(loginRes.status).toBe(200);
+      expect(loginRes.body.data.user.email).toBe("troca.senha@teste.com");
+    });
+
+    it("deve rejeitar troca de senha com 401 se a senha atual estiver incorreta", async () => {
+      const reg = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "senha.errada@teste.com",
+          password: "senhaCorretaOriginal",
+        });
+
+      const token = reg.body.data.session.access_token;
+
+      const changeRes = await request(app)
+        .post("/api/auth/change-password")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          currentPassword: "senhaErradaQualquer",
+          newPassword: "novaSenhaValida123",
+        });
+
+      expect(changeRes.status).toBe(401);
+      expect(changeRes.body).toHaveProperty("code", "UNAUTHORIZED");
+    });
+
+    it("deve rejeitar troca de senha com 400 se a nova senha tiver menos de 6 caracteres", async () => {
+      const reg = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "senha.curta@teste.com",
+          password: "senhaAtual123",
+        });
+
+      const token = reg.body.data.session.access_token;
+
+      const changeRes = await request(app)
+        .post("/api/auth/change-password")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          currentPassword: "senhaAtual123",
+          newPassword: "123",
+        });
+
+      expect(changeRes.status).toBe(400);
+      expect(changeRes.body).toHaveProperty("code", "VALIDATION_ERROR");
+    });
+  });
+
   describe("SupabaseAuthService (Integração Direta com Supabase)", () => {
     it("deve disparar ValidationError quando o Supabase Auth falhar no registro", async () => {
       const mockSupabase = {

@@ -50,3 +50,19 @@ export const refreshTokenSchema = z.object({
 
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 
+/**
+ * Schema de validação para alteração de senha
+ */
+export const changePasswordSchema = z.object({
+  currentPassword: z
+    .string({ required_error: "A senha atual é obrigatória" })
+    .min(1, "A senha atual é obrigatória"),
+  newPassword: z
+    .string({ required_error: "A nova senha é obrigatória" })
+    .min(6, "A nova senha deve conter no mínimo 6 caracteres")
+    .max(72, "A nova senha deve conter no máximo 72 caracteres"),
+});
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+
