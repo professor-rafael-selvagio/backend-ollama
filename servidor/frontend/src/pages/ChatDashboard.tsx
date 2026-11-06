@@ -14,6 +14,7 @@ import { ChatInput } from "../components/ChatInput";
 import { ProjectModal } from "../components/ProjectModal";
 import { RenameModal } from "../components/RenameModal";
 import { UserProfileModal } from "../components/UserProfileModal";
+import { ConfirmModal } from "../components/ConfirmModal";
 
 interface ChatDashboardProps {
   onOpenAdmin?: () => void;
@@ -40,6 +41,22 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ onOpenAdmin }) => 
   const [isRenameModalOpen, setIsRenameModalOpen] = useState<boolean>(false);
   const [conversationToRename, setConversationToRename] = useState<Conversation | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+
+  // Modal de Confirmação e Alertas do Sistema
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "success" | "info";
+    isAlert?: boolean;
+    onConfirm?: () => Promise<void> | void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
 
   // Carrega lista inicial de projetos, conversas e modelos disponíveis
   const loadInitialData = useCallback(async () => {
@@ -165,7 +182,14 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ onOpenAdmin }) => 
       setConversations(updatedList);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : "Erro ao enviar mensagem";
-      alert(`Falha no envio: ${errMsg}`);
+      setModalConfig({
+        isOpen: true,
+        title: "Falha no Envio",
+        message: `Não foi possível enviar a mensagem para o modelo: ${errMsg}`,
+        variant: "danger",
+        isAlert: true,
+        confirmText: "Entendido",
+      });
     } finally {
       setIsSending(false);
     }
@@ -195,14 +219,28 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ onOpenAdmin }) => 
     }
   };
 
-  const handleDeleteProject = async (projectId: string) => {
-    if (!confirm("Tem certeza que deseja excluir este projeto? Os chats não serão apagados, apenas desvinculados.")) {
-      return;
-    }
-    await api.projects.delete(projectId);
-    setProjects((prev) => prev.filter((p) => p.id !== projectId));
-    const updatedList = await api.conversations.list();
-    setConversations(updatedList);
+  const handleDeleteProject = (projectId: string) => {
+    const proj = projects.find((p) => p.id === projectId);
+    setModalConfig({
+      isOpen: true,
+      title: "Excluir Projeto",
+      message: `Tem certeza que deseja excluir o projeto "${
+        proj?.name || "este projeto"
+      }"? Os chats vinculados não serão apagados, apenas desvinculados do projeto.`,
+      variant: "danger",
+      confirmText: "Excluir Projeto",
+      cancelText: "Cancelar",
+      onConfirm: async () => {
+        try {
+          await api.projects.delete(projectId);
+          setProjects((prev) => prev.filter((p) => p.id !== projectId));
+          const updatedList = await api.conversations.list();
+          setConversations(updatedList);
+        } finally {
+          setModalConfig((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
   };
 
   // Gerenciamento de Conversas (Renomear / Mover)
@@ -222,16 +260,30 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ onOpenAdmin }) => 
     );
   };
 
-  const handleDeleteConversation = async (conversationId: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta conversa e todo o seu histórico?")) {
-      return;
-    }
-    await api.conversations.delete(conversationId);
-    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
-    if (activeConversationId === conversationId) {
-      setActiveConversationId(null);
-      setMessages([]);
-    }
+  const handleDeleteConversation = (conversationId: string) => {
+    const conv = conversations.find((c) => c.id === conversationId);
+    setModalConfig({
+      isOpen: true,
+      title: "Excluir Conversa",
+      message: `Tem certeza que deseja excluir "${
+        conv?.title || "esta conversa"
+      }"? A conversa será movida para a Lixeira do Sistema (*soft delete*).`,
+      variant: "danger",
+      confirmText: "Mover para Lixeira",
+      cancelText: "Cancelar",
+      onConfirm: async () => {
+        try {
+          await api.conversations.delete(conversationId);
+          setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+          if (activeConversationId === conversationId) {
+            setActiveConversationId(null);
+            setMessages([]);
+          }
+        } finally {
+          setModalConfig((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
   };
 
   return (
@@ -310,6 +362,18 @@ export const ChatDashboard: React.FC<ChatDashboardProps> = ({ onOpenAdmin }) => 
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
         user={user}
+      />
+
+      <ConfirmModal
+        isOpen={modalConfig.isOpen}
+        onClose={() => setModalConfig((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={modalConfig.onConfirm}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        confirmText={modalConfig.confirmText}
+        cancelText={modalConfig.cancelText}
+        variant={modalConfig.variant}
+        isAlert={modalConfig.isAlert}
       />
     </div>
   );

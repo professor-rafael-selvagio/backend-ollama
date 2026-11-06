@@ -44,6 +44,7 @@ import {
 } from "../types";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { ConfirmModal } from "../components/ConfirmModal";
 
 interface AdminDashboardProps {
   onBackToChat: () => void;
@@ -82,6 +83,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  // Modal de Confirmação e Alertas do Painel
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "success" | "info";
+    isAlert?: boolean;
+    onConfirm?: () => Promise<void> | void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
 
   const loadData = async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -142,72 +159,82 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
     );
   }
 
-  const handleToggleAdminRole = async (targetUser: AdminUser) => {
+  const handleToggleAdminRole = (targetUser: AdminUser) => {
     if (targetUser.email.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase() && targetUser.is_admin) {
-      setNotification({
-        type: "error",
+      setModalConfig({
+        isOpen: true,
+        title: "Ação Não Permitida",
         message: `Não é permitido revogar a permissão do Administrador Principal (${SUPERADMIN_EMAIL}).`,
+        variant: "danger",
+        isAlert: true,
+        confirmText: "Entendido",
       });
       return;
     }
 
     const newRole = !targetUser.is_admin;
     const actionText = newRole ? "conceder" : "revogar";
-    const confirmPrompt = window.confirm(
-      `Deseja realmente ${actionText} a permissão de Administrador para ${targetUser.name || targetUser.email}?`
-    );
-
-    if (!confirmPrompt) return;
-
-    setActionUserId(targetUser.id);
-    setNotification(null);
-
-    try {
-      const updated = await api.admin.updateUserRole(targetUser.id, newRole);
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      setNotification({
-        type: "success",
-        message: newRole
-          ? `Permissão de Administrador concedida com sucesso para ${targetUser.name || targetUser.email}!`
-          : `Permissão de Administrador revogada para ${targetUser.name || targetUser.email}.`,
-      });
-      loadData(true);
-    } catch (err: unknown) {
-      setNotification({
-        type: "error",
-        message: err instanceof Error ? err.message : "Erro ao atualizar permissão.",
-      });
-    } finally {
-      setActionUserId(null);
-    }
+    setModalConfig({
+      isOpen: true,
+      title: newRole ? "Conceder Permissão de Admin" : "Revogar Permissão de Admin",
+      message: `Deseja realmente ${actionText} a permissão de Administrador para "${targetUser.name || targetUser.email}"?`,
+      variant: newRole ? "warning" : "danger",
+      confirmText: newRole ? "Conceder Permissão" : "Revogar Permissão",
+      cancelText: "Cancelar",
+      onConfirm: async () => {
+        setActionUserId(targetUser.id);
+        setModalConfig((prev) => ({ ...prev, isOpen: false }));
+        try {
+          const updated = await api.admin.updateUserRole(targetUser.id, newRole);
+          setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+          setNotification({
+            type: "success",
+            message: newRole
+              ? `Permissão de Administrador concedida com sucesso para ${targetUser.name || targetUser.email}!`
+              : `Permissão de Administrador revogada para ${targetUser.name || targetUser.email}.`,
+          });
+          loadData(true);
+        } catch (err: unknown) {
+          setNotification({
+            type: "error",
+            message: err instanceof Error ? err.message : "Erro ao atualizar permissão.",
+          });
+        } finally {
+          setActionUserId(null);
+        }
+      },
+    });
   };
 
-  const handleRestoreItem = async (item: AdminDeletedItem) => {
-    const confirmPrompt = window.confirm(
-      `Deseja restaurar ${item.resource_type === "conversation" ? "a conversa" : "o projeto"} "${item.title}"?`
-    );
-    if (!confirmPrompt) return;
-
-    setRestoringId(item.id);
-    setNotification(null);
-
-    try {
-      const msg = await api.admin.restoreItem(item.resource_type, item.id);
-      setNotification({
-        type: "success",
-        message: msg || "Item restaurado com sucesso!",
-      });
-      // Remove da lista de lixeira localmente e atualiza contadores
-      setDeletedItems((prev) => prev.filter((i) => i.id !== item.id));
-      loadData(true);
-    } catch (err: unknown) {
-      setNotification({
-        type: "error",
-        message: err instanceof Error ? err.message : "Falha ao restaurar item da lixeira.",
-      });
-    } finally {
-      setRestoringId(null);
-    }
+  const handleRestoreItem = (item: AdminDeletedItem) => {
+    setModalConfig({
+      isOpen: true,
+      title: "Restaurar Item da Lixeira",
+      message: `Deseja restaurar ${item.resource_type === "conversation" ? "a conversa" : "o projeto"} "${item.title}"? O item voltará a ficar ativo imediatamente.`,
+      variant: "success",
+      confirmText: "Restaurar Agora",
+      cancelText: "Cancelar",
+      onConfirm: async () => {
+        setRestoringId(item.id);
+        setModalConfig((prev) => ({ ...prev, isOpen: false }));
+        try {
+          const msg = await api.admin.restoreItem(item.resource_type, item.id);
+          setNotification({
+            type: "success",
+            message: msg || "Item restaurado com sucesso!",
+          });
+          setDeletedItems((prev) => prev.filter((i) => i.id !== item.id));
+          loadData(true);
+        } catch (err: unknown) {
+          setNotification({
+            type: "error",
+            message: err instanceof Error ? err.message : "Falha ao restaurar item da lixeira.",
+          });
+        } finally {
+          setRestoringId(null);
+        }
+      },
+    });
   };
 
   const loadSystemResources = async (silent = false) => {
@@ -259,49 +286,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
     }
   };
 
-  const handleToggleBlockUser = async (targetUser: AdminUser) => {
+  const handleToggleBlockUser = (targetUser: AdminUser) => {
     if (targetUser.email.toLowerCase() === SUPERADMIN_EMAIL.toLowerCase()) {
-      setNotification({
-        type: "error",
+      setModalConfig({
+        isOpen: true,
+        title: "Ação Não Permitida",
         message: `Não é permitido bloquear o Administrador Principal (${SUPERADMIN_EMAIL}).`,
+        variant: "danger",
+        isAlert: true,
+        confirmText: "Entendido",
       });
       return;
     }
 
     const shouldBlock = !targetUser.is_blocked;
     const actionVerb = shouldBlock ? "bloquear o acesso de" : "desbloquear o acesso de";
-    const confirmPrompt = window.confirm(
-      `Deseja realmente ${actionVerb} ${targetUser.name || targetUser.email}? ${
+    setModalConfig({
+      isOpen: true,
+      title: shouldBlock ? "Bloquear Usuário" : "Desbloquear Usuário",
+      message: `Deseja realmente ${actionVerb} "${targetUser.name || targetUser.email}"? ${
         shouldBlock
-          ? "O usuário perderá o acesso imediato ao sistema."
-          : "O usuário poderá voltar a acessar normalmente."
-      }`
-    );
-
-    if (!confirmPrompt) return;
-
-    setBlockingUserId(targetUser.id);
-    setNotification(null);
-
-    try {
-      const updated = await api.admin.blockUser(targetUser.id, shouldBlock);
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-      setNotification({
-        type: "success",
-        message: shouldBlock
-          ? `Usuário ${targetUser.name || targetUser.email} foi bloqueado com sucesso!`
-          : `Usuário ${targetUser.name || targetUser.email} foi desbloqueado com sucesso!`,
-      });
-      loadData(true);
-    } catch (err: unknown) {
-      setNotification({
-        type: "error",
-        message:
-          err instanceof Error ? err.message : "Erro ao alterar bloqueio do usuário.",
-      });
-    } finally {
-      setBlockingUserId(null);
-    }
+          ? "O usuário perderá o acesso imediato ao sistema e novas tentativas de login serão bloqueadas."
+          : "O usuário terá o acesso restabelecido e poderá voltar a entrar no sistema normalmente."
+      }`,
+      variant: shouldBlock ? "danger" : "success",
+      confirmText: shouldBlock ? "Confirmar Bloqueio" : "Confirmar Desbloqueio",
+      cancelText: "Cancelar",
+      onConfirm: async () => {
+        setBlockingUserId(targetUser.id);
+        setModalConfig((prev) => ({ ...prev, isOpen: false }));
+        try {
+          const updated = await api.admin.blockUser(targetUser.id, shouldBlock);
+          setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+          setNotification({
+            type: "success",
+            message: shouldBlock
+              ? `Usuário ${targetUser.name || targetUser.email} foi bloqueado com sucesso!`
+              : `Usuário ${targetUser.name || targetUser.email} foi desbloqueado com sucesso!`,
+          });
+          loadData(true);
+        } catch (err: unknown) {
+          setNotification({
+            type: "error",
+            message:
+              err instanceof Error ? err.message : "Erro ao alterar bloqueio do usuário.",
+          });
+        } finally {
+          setBlockingUserId(null);
+        }
+      },
+    });
   };
 
   const formatBytesGB = (bytes: number = 0) => {
@@ -1585,6 +1619,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
           </div>
         </div>
       )}
+
+      {/* Modal Reutilizável de Confirmação e Alertas */}
+      <ConfirmModal
+        isOpen={modalConfig.isOpen}
+        onClose={() => setModalConfig((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={modalConfig.onConfirm}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        confirmText={modalConfig.confirmText}
+        cancelText={modalConfig.cancelText}
+        variant={modalConfig.variant}
+        isAlert={modalConfig.isAlert}
+      />
     </div>
   );
 };
