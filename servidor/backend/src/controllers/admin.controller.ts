@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { updateUserRoleSchema } from "../schemas/admin.schema";
+import { restoreItemSchema, updateUserRoleSchema } from "../schemas/admin.schema";
 import { getAdminService, IAdminService } from "../services/admin.service";
 import { UnauthorizedError } from "../utils/errors";
 
@@ -82,6 +82,78 @@ export class AdminController {
           : "Permissão de administrador revogada com sucesso.",
         data: {
           user: updatedUser,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * GET /api/admin/deleted
+   * Lista todos os itens excluídos logicamente (conversas e projetos)
+   */
+  public getDeleted = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const items = await this.getService().getDeletedItems();
+      res.status(200).json({
+        status: "success",
+        data: {
+          items,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * POST /api/admin/restore
+   * Restaura um item excluído logicamente
+   */
+  public restoreItem = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const validated = restoreItemSchema.parse(req.body);
+      const result = await this.getService().restoreItem(
+        validated.resource_type,
+        validated.resource_id
+      );
+
+      res.status(200).json({
+        status: "success",
+        message: result.message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
+   * GET /api/admin/audit-logs
+   * Retorna os registros de auditoria do sistema
+   */
+  public getAuditLogs = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const limit = req.query.limit ? Number(req.query.limit) : 100;
+      const offset = req.query.offset ? Number(req.query.offset) : 0;
+      const logs = await this.getService().getAuditLogs(limit, offset);
+
+      res.status(200).json({
+        status: "success",
+        data: {
+          logs,
         },
       });
     } catch (error) {

@@ -16,6 +16,7 @@ import {
   SendMessageInput,
 } from "../schemas/conversation.schema";
 import { logger } from "../utils/logger";
+import { getAuditService } from "./audit.service";
 
 export interface IConversationRepository {
   createConversation(
@@ -80,7 +81,7 @@ export class InMemoryConversationRepository implements IConversationRepository {
   ): Promise<Conversation[]> {
     const list: Conversation[] = [];
     for (const conv of this.conversations.values()) {
-      if (conv.user_id === userId) {
+      if (conv.user_id === userId && !conv.deleted_at) {
         if (projectId !== undefined) {
           if (projectId === null && conv.project_id) continue;
           if (projectId !== null && conv.project_id !== projectId) continue;
@@ -98,7 +99,7 @@ export class InMemoryConversationRepository implements IConversationRepository {
     conversationId: string
   ): Promise<Conversation | null> {
     const conv = this.conversations.get(conversationId);
-    if (!conv || conv.user_id !== userId) return null;
+    if (!conv || conv.user_id !== userId || conv.deleted_at) return null;
     return conv;
   }
 
@@ -173,8 +174,31 @@ export class InMemoryConversationRepository implements IConversationRepository {
   ): Promise<boolean> {
     const conv = await this.getConversation(userId, conversationId);
     if (!conv) return false;
-    this.conversations.delete(conversationId);
-    this.messages.delete(conversationId);
+    conv.deleted_at = new Date().toISOString();
+    this.conversations.set(conversationId, conv);
+
+    getAuditService()
+      .log({
+        userId,
+        action: "CONVERSATION_DELETE",
+        resourceType: "conversation",
+        resourceId: conversationId,
+        details: { title: conv.title },
+      })
+      .catch(() => {});
+
+    return true;
+  }
+
+  public getAllConversations(): Conversation[] {
+    return Array.from(this.conversations.values());
+  }
+
+  public restoreConversation(conversationId: string): boolean {
+    const conv = this.conversations.get(conversationId);
+    if (!conv || !conv.deleted_at) return false;
+    conv.deleted_at = undefined;
+    this.conversations.set(conversationId, conv);
     return true;
   }
 
@@ -216,7 +240,7 @@ export class PostgresConversationRepository implements IConversationRepository {
     if (projectId === undefined) {
       const res = await this.pool.query(
         `SELECT * FROM public.conversations
-         WHERE user_id = $1
+         WHERE user_id = $1 AND deleted_at IS NULL
          ORDER BY updated_at DESC`,
         [userId]
       );
@@ -224,7 +248,7 @@ export class PostgresConversationRepository implements IConversationRepository {
     } else if (projectId === null) {
       const res = await this.pool.query(
         `SELECT * FROM public.conversations
-         WHERE user_id = $1 AND project_id IS NULL
+         WHERE user_id = $1 AND project_id IS NULL AND deleted_at IS NULL
          ORDER BY updated_at DESC`,
         [userId]
       );
@@ -232,7 +256,7 @@ export class PostgresConversationRepository implements IConversationRepository {
     } else {
       const res = await this.pool.query(
         `SELECT * FROM public.conversations
-         WHERE user_id = $1 AND project_id = $2
+         WHERE user_id = $1 AND project_id = $2 AND deleted_at IS NULL
          ORDER BY updated_at DESC`,
         [userId, projectId]
       );
@@ -246,7 +270,7 @@ export class PostgresConversationRepository implements IConversationRepository {
   ): Promise<Conversation | null> {
     const res = await this.pool.query(
       `SELECT * FROM public.conversations
-       WHERE id = $1 AND user_id = $2
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
        LIMIT 1`,
       [conversationId, userId]
     );
@@ -353,12 +377,25 @@ export class PostgresConversationRepository implements IConversationRepository {
     conversationId: string
   ): Promise<boolean> {
     const res = await this.pool.query(
-      `DELETE FROM public.conversations
-       WHERE id = $1 AND user_id = $2`,
+      `UPDATE public.conversations
+       SET deleted_at = now()
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
       [conversationId, userId]
     );
 
-    return (res.rowCount ?? 0) > 0;
+    const deleted = (res.rowCount ?? 0) > 0;
+    if (deleted) {
+      getAuditService()
+        .log({
+          userId,
+          action: "CONVERSATION_DELETE",
+          resourceType: "conversation",
+          resourceId: conversationId,
+        })
+        .catch(() => {});
+    }
+
+    return deleted;
   }
 }
 

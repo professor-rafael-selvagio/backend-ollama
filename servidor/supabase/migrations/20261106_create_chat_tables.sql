@@ -14,8 +14,13 @@ create table if not exists auth.users (
     email text unique not null,
     password_hash text,
     raw_user_meta_data jsonb default '{}'::jsonb,
+    user_type text not null default 'aluno' check (user_type in ('aluno', 'funcionario')),
+    ra text,
+    cpf text,
+    nif text,
     is_admin boolean not null default false,
     last_seen_at timestamptz not null default now(),
+    deleted_at timestamptz default null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -35,10 +40,50 @@ begin
     ) then
         alter table auth.users add column last_seen_at timestamptz not null default now();
     end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'auth' and table_name = 'users' and column_name = 'user_type'
+    ) then
+        alter table auth.users add column user_type text not null default 'aluno';
+    end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'auth' and table_name = 'users' and column_name = 'ra'
+    ) then
+        alter table auth.users add column ra text;
+    end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'auth' and table_name = 'users' and column_name = 'cpf'
+    ) then
+        alter table auth.users add column cpf text;
+    end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'auth' and table_name = 'users' and column_name = 'nif'
+    ) then
+        alter table auth.users add column nif text;
+    end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'auth' and table_name = 'users' and column_name = 'deleted_at'
+    ) then
+        alter table auth.users add column deleted_at timestamptz default null;
+    end if;
 end $$;
 
+-- Índices únicos parciais para evitar duplicidade de RA, CPF e NIF
+create unique index if not exists idx_users_unique_ra on auth.users (lower(ra)) where ra is not null and deleted_at is null;
+create unique index if not exists idx_users_unique_cpf on auth.users (lower(cpf)) where cpf is not null and deleted_at is null;
+create unique index if not exists idx_users_unique_nif on auth.users (lower(nif)) where nif is not null and deleted_at is null;
+
 -- Concede permissão de administrador garantida para rselvagio@sp.senai.br
-update auth.users set is_admin = true where email = 'rselvagio@sp.senai.br';
+update auth.users set is_admin = true, user_type = 'funcionario', nif = coalesce(nif, '0000001') where email = 'rselvagio@sp.senai.br';
 
 -- Função auxiliar auth.uid() para compatibilidade de políticas de RLS
 create or replace function auth.uid() returns uuid as $$
@@ -65,9 +110,20 @@ create table if not exists public.projects (
     name text not null,
     description text,
     color text not null default '#3B82F6',
+    deleted_at timestamptz default null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'public' and table_name = 'projects' and column_name = 'deleted_at'
+    ) then
+        alter table public.projects add column deleted_at timestamptz default null;
+    end if;
+end $$;
 
 comment on table public.projects is 'Projetos criados pelos usuários para agrupar conversas e tópicos de estudo';
 comment on column public.projects.user_id is 'ID do usuário proprietário vinculado à tabela auth.users';
@@ -79,11 +135,12 @@ create table if not exists public.conversations (
     project_id uuid references public.projects(id) on delete set null,
     title text not null default 'Nova Conversa',
     model text not null,
+    deleted_at timestamptz default null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
 
--- Garante a coluna project_id caso a tabela conversations já exista de execuções anteriores
+-- Garante a coluna project_id e deleted_at caso a tabela conversations já exista de execuções anteriores
 do $$
 begin
     if not exists (
@@ -91,6 +148,13 @@ begin
         where table_schema = 'public' and table_name = 'conversations' and column_name = 'project_id'
     ) then
         alter table public.conversations add column project_id uuid references public.projects(id) on delete set null;
+    end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'public' and table_name = 'conversations' and column_name = 'deleted_at'
+    ) then
+        alter table public.conversations add column deleted_at timestamptz default null;
     end if;
 end
 $$;
@@ -109,6 +173,7 @@ create table if not exists public.messages (
     tokens integer,
     prompt_tokens integer default 0,
     completion_tokens integer default 0,
+    deleted_at timestamptz default null,
     created_at timestamptz not null default now()
 );
 
@@ -127,7 +192,27 @@ begin
     ) then
         alter table public.messages add column completion_tokens integer default 0;
     end if;
+
+    if not exists (
+        select 1 from information_schema.columns 
+        where table_schema = 'public' and table_name = 'messages' and column_name = 'deleted_at'
+    ) then
+        alter table public.messages add column deleted_at timestamptz default null;
+    end if;
 end $$;
+
+-- 5.1 Tabela de Auditoria de Ações do Sistema
+create table if not exists public.audit_logs (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid references auth.users(id) on delete set null,
+    user_email text,
+    action text not null,
+    resource_type text not null,
+    resource_id text,
+    details jsonb default '{}'::jsonb,
+    ip_address text,
+    created_at timestamptz not null default now()
+);
 
 comment on table public.messages is 'Mensagens individuais enviadas pelo usuário e geradas pelo Ollama';
 

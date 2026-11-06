@@ -3,23 +3,49 @@ import { z } from "zod";
 /**
  * Schema de validação para registro de novo usuário
  */
-export const registerSchema = z.object({
-  email: z
-    .string({ required_error: "O e-mail é obrigatório" })
-    .email("Formato de e-mail inválido")
-    .trim()
-    .toLowerCase(),
-  password: z
-    .string({ required_error: "A senha é obrigatória" })
-    .min(6, "A senha deve conter no mínimo 6 caracteres")
-    .max(72, "A senha deve conter no máximo 72 caracteres"),
-  name: z
-    .string()
-    .trim()
-    .min(1, "O nome não pode ser vazio")
-    .max(100, "O nome pode ter no máximo 100 caracteres")
-    .optional(),
-});
+export const registerSchema = z
+  .object({
+    email: z
+      .string({ required_error: "O e-mail é obrigatório" })
+      .email("Formato de e-mail inválido")
+      .trim()
+      .toLowerCase(),
+    password: z
+      .string({ required_error: "A senha é obrigatória" })
+      .min(6, "A senha deve conter no mínimo 6 caracteres")
+      .max(72, "A senha deve conter no máximo 72 caracteres"),
+    name: z
+      .string()
+      .trim()
+      .min(1, "O nome não pode ser vazio")
+      .max(100, "O nome pode ter no máximo 100 caracteres")
+      .optional(),
+    user_type: z.enum(["aluno", "funcionario"]).default("aluno"),
+    ra: z.string().trim().optional(),
+    cpf: z.string().trim().optional(),
+    nif: z.string().trim().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.user_type === "funcionario") {
+      if (!data.nif || data.nif.trim().length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "O NIF é obrigatório para funcionários.",
+          path: ["nif"],
+        });
+      }
+    } else if (data.user_type === "aluno") {
+      const hasRa = Boolean(data.ra && data.ra.trim().length > 0);
+      const hasCpf = Boolean(data.cpf && data.cpf.trim().length > 0);
+      if (!hasRa && !hasCpf) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Alunos devem obrigatoriamente informar o RA ou o CPF.",
+          path: ["ra"],
+        });
+      }
+    }
+  });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 

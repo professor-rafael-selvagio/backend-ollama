@@ -157,6 +157,10 @@ export async function authMiddleware(
 
   let fallbackEmail = fallbackId.includes("@") ? fallbackId : `${fallbackId}@localhost`;
   let fallbackName: string | undefined = undefined;
+  let userType: "aluno" | "funcionario" | undefined = undefined;
+  let ra: string | undefined = undefined;
+  let cpf: string | undefined = undefined;
+  let nif: string | undefined = undefined;
   let isAdmin = Boolean(
     fallbackEmail.toLowerCase() === "rselvagio@sp.senai.br" ||
     req.headers["x-test-is-admin"] === "true"
@@ -167,6 +171,10 @@ export async function authMiddleware(
     if (profile) {
       fallbackEmail = profile.email || fallbackEmail;
       fallbackName = profile.name;
+      userType = profile.user_type;
+      ra = profile.ra;
+      cpf = profile.cpf;
+      nif = profile.nif;
       isAdmin = Boolean(
         profile.is_admin ||
         fallbackEmail.toLowerCase() === "rselvagio@sp.senai.br" ||
@@ -181,6 +189,10 @@ export async function authMiddleware(
     id: fallbackId,
     email: fallbackEmail,
     name: fallbackName,
+    user_type: userType,
+    ra,
+    cpf,
+    nif,
     role: "authenticated",
     is_admin: isAdmin,
   };

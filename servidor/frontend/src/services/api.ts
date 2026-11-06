@@ -1,6 +1,8 @@
 import {
+  AdminDeletedItem,
   AdminMetrics,
   AdminUser,
+  AuditLogEntry,
   Conversation,
   ConversationWithMessages,
   DatabaseMessage,
@@ -75,13 +77,21 @@ class ApiService {
 
   // --- Módulo Auth ---
   public auth = {
-    register: async (email: string, password: string, name?: string) => {
+    register: async (input: {
+      email: string;
+      password: string;
+      name?: string;
+      user_type?: "aluno" | "funcionario";
+      ra?: string;
+      cpf?: string;
+      nif?: string;
+    }) => {
       const res = await this.request<{
         status: string;
         data: { user: User; session: Session | null };
       }>("/api/auth/register", {
         method: "POST",
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify(input),
       });
       if (res.data.session) {
         this.setSession(res.data.session, res.data.user);
@@ -170,6 +180,28 @@ class ApiService {
         }
       );
       return res.data.user;
+    },
+    getDeleted: async (): Promise<AdminDeletedItem[]> => {
+      const res = await this.request<{ status: string; data: { items: AdminDeletedItem[] } }>(
+        "/api/admin/deleted"
+      );
+      return res.data.items || [];
+    },
+    restoreItem: async (
+      resource_type: "conversation" | "project",
+      resource_id: string
+    ): Promise<string> => {
+      const res = await this.request<{ status: string; message: string }>("/api/admin/restore", {
+        method: "POST",
+        body: JSON.stringify({ resource_type, resource_id }),
+      });
+      return res.message;
+    },
+    getAuditLogs: async (limit = 100, offset = 0): Promise<AuditLogEntry[]> => {
+      const res = await this.request<{ status: string; data: { logs: AuditLogEntry[] } }>(
+        `/api/admin/audit-logs?limit=${limit}&offset=${offset}`
+      );
+      return res.data.logs || [];
     },
   };
 

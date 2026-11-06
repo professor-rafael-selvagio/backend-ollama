@@ -6,6 +6,7 @@ import { NotFoundError } from "../utils/errors";
 import { getDbPool } from "../config/database";
 import { env } from "../config/env";
 import { IConversationRepository } from "./conversation.service";
+import { getAuditService } from "./audit.service";
 
 export interface IProjectRepository {
   createProject(userId: string, input: CreateProjectInput): Promise<Project>;
@@ -42,7 +43,7 @@ export class PostgresProjectRepository implements IProjectRepository {
   public async listProjects(userId: string): Promise<Project[]> {
     const res = await this.pool.query(
       `SELECT * FROM public.projects
-       WHERE user_id = $1
+       WHERE user_id = $1 AND deleted_at IS NULL
        ORDER BY updated_at DESC`,
       [userId]
     );
@@ -55,7 +56,7 @@ export class PostgresProjectRepository implements IProjectRepository {
   ): Promise<Project | null> {
     const res = await this.pool.query(
       `SELECT * FROM public.projects
-       WHERE id = $1 AND user_id = $2
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
        LIMIT 1`,
       [projectId, userId]
     );
@@ -109,11 +110,32 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   public async deleteProject(userId: string, projectId: string): Promise<boolean> {
     const res = await this.pool.query(
-      `DELETE FROM public.projects
-       WHERE id = $1 AND user_id = $2`,
+      `UPDATE public.projects
+       SET deleted_at = now()
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
       [projectId, userId]
     );
-    return (res.rowCount ?? 0) > 0;
+
+    const deleted = (res.rowCount ?? 0) > 0;
+    if (deleted) {
+      await this.pool.query(
+        `UPDATE public.conversations
+         SET deleted_at = now()
+         WHERE project_id = $1 AND deleted_at IS NULL`,
+        [projectId]
+      );
+
+      getAuditService()
+        .log({
+          userId,
+          action: "PROJECT_DELETE",
+          resourceType: "project",
+          resourceId: projectId,
+        })
+        .catch(() => {});
+    }
+
+    return deleted;
   }
 }
 
@@ -142,7 +164,7 @@ export class InMemoryProjectRepository implements IProjectRepository {
   public async listProjects(userId: string): Promise<Project[]> {
     const list: Project[] = [];
     for (const proj of this.projects.values()) {
-      if (proj.user_id === userId) {
+      if (proj.user_id === userId && !proj.deleted_at) {
         list.push(proj);
       }
     }
@@ -156,7 +178,7 @@ export class InMemoryProjectRepository implements IProjectRepository {
     projectId: string
   ): Promise<Project | null> {
     const proj = this.projects.get(projectId);
-    if (!proj || proj.user_id !== userId) return null;
+    if (!proj || proj.user_id !== userId || proj.deleted_at) return null;
     return proj;
   }
 
@@ -180,7 +202,31 @@ export class InMemoryProjectRepository implements IProjectRepository {
   public async deleteProject(userId: string, projectId: string): Promise<boolean> {
     const proj = await this.getProject(userId, projectId);
     if (!proj) return false;
-    this.projects.delete(projectId);
+    proj.deleted_at = new Date().toISOString();
+    this.projects.set(projectId, proj);
+
+    getAuditService()
+      .log({
+        userId,
+        action: "PROJECT_DELETE",
+        resourceType: "project",
+        resourceId: projectId,
+        details: { name: proj.name },
+      })
+      .catch(() => {});
+
+    return true;
+  }
+
+  public getAllProjects(): Project[] {
+    return Array.from(this.projects.values());
+  }
+
+  public restoreProject(projectId: string): boolean {
+    const proj = this.projects.get(projectId);
+    if (!proj || !proj.deleted_at) return false;
+    proj.deleted_at = undefined;
+    this.projects.set(projectId, proj);
     return true;
   }
 
@@ -207,6 +253,10 @@ export class ProjectService {
 
   public setRepositoryForTesting(repo: IProjectRepository): void {
     this.repository = repo;
+  }
+
+  public getRepository(): IProjectRepository {
+    return this.repository;
   }
 
   public async create(userId: string, input: CreateProjectInput): Promise<Project> {

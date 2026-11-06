@@ -114,6 +114,10 @@ export class AuthController {
           ...req.user,
           email: profile.email || req.user.email,
           name: profile.name ?? req.user.name,
+          user_type: profile.user_type ?? req.user.user_type,
+          ra: profile.ra ?? req.user.ra,
+          cpf: profile.cpf ?? req.user.cpf,
+          nif: profile.nif ?? req.user.nif,
           is_admin: profile.is_admin ?? req.user.is_admin,
           last_seen_at: profile.last_seen_at ?? req.user.last_seen_at,
         };

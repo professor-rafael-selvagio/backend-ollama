@@ -47,8 +47,13 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         email text UNIQUE NOT NULL,
         password_hash text,
         raw_user_meta_data jsonb DEFAULT '{}'::jsonb,
+        user_type text NOT NULL DEFAULT 'aluno' CHECK (user_type IN ('aluno', 'funcionario')),
+        ra text,
+        cpf text,
+        nif text,
         is_admin boolean NOT NULL DEFAULT false,
         last_seen_at timestamptz NOT NULL DEFAULT now(),
+        deleted_at timestamptz DEFAULT NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -68,10 +73,50 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         ) THEN
             ALTER TABLE auth.users ADD COLUMN last_seen_at timestamptz NOT NULL DEFAULT now();
         END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'user_type'
+        ) THEN
+            ALTER TABLE auth.users ADD COLUMN user_type text NOT NULL DEFAULT 'aluno';
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'ra'
+        ) THEN
+            ALTER TABLE auth.users ADD COLUMN ra text;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'cpf'
+        ) THEN
+            ALTER TABLE auth.users ADD COLUMN cpf text;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'nif'
+        ) THEN
+            ALTER TABLE auth.users ADD COLUMN nif text;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = 'deleted_at'
+        ) THEN
+            ALTER TABLE auth.users ADD COLUMN deleted_at timestamptz DEFAULT NULL;
+        END IF;
     END $$;
 
+    -- Índices únicos parciais para evitar duplicidade de RA, CPF e NIF
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unique_ra ON auth.users (lower(ra)) WHERE ra IS NOT NULL AND deleted_at IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unique_cpf ON auth.users (lower(cpf)) WHERE cpf IS NOT NULL AND deleted_at IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unique_nif ON auth.users (lower(nif)) WHERE nif IS NOT NULL AND deleted_at IS NULL;
+
     -- Concede permissão de administrador garantida para rselvagio@sp.senai.br
-    UPDATE auth.users SET is_admin = true WHERE email = 'rselvagio@sp.senai.br';
+    UPDATE auth.users SET is_admin = true, user_type = 'funcionario', nif = COALESCE(nif, '0000001') WHERE email = 'rselvagio@sp.senai.br';
 
     CREATE TABLE IF NOT EXISTS public.projects (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -79,9 +124,20 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         name text NOT NULL,
         description text,
         color text NOT NULL DEFAULT '#3B82F6',
+        deleted_at timestamptz DEFAULT NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'deleted_at'
+        ) THEN
+            ALTER TABLE public.projects ADD COLUMN deleted_at timestamptz DEFAULT NULL;
+        END IF;
+    END $$;
 
     CREATE TABLE IF NOT EXISTS public.conversations (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -89,6 +145,7 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL,
         title text NOT NULL DEFAULT 'Nova Conversa',
         model text NOT NULL,
+        deleted_at timestamptz DEFAULT NULL,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -101,6 +158,13 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         ) THEN
             ALTER TABLE public.conversations ADD COLUMN project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL;
         END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'conversations' AND column_name = 'deleted_at'
+        ) THEN
+            ALTER TABLE public.conversations ADD COLUMN deleted_at timestamptz DEFAULT NULL;
+        END IF;
     END $$;
 
     CREATE TABLE IF NOT EXISTS public.messages (
@@ -112,6 +176,7 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         tokens integer,
         prompt_tokens integer DEFAULT 0,
         completion_tokens integer DEFAULT 0,
+        deleted_at timestamptz DEFAULT NULL,
         created_at timestamptz NOT NULL DEFAULT now()
     );
 
@@ -130,7 +195,34 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         ) THEN
             ALTER TABLE public.messages ADD COLUMN completion_tokens integer DEFAULT 0;
         END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'deleted_at'
+        ) THEN
+            ALTER TABLE public.messages ADD COLUMN deleted_at timestamptz DEFAULT NULL;
+        END IF;
     END $$;
+
+    -- Tabela de Auditoria do Sistema
+    CREATE TABLE IF NOT EXISTS public.audit_logs (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+        user_email text,
+        action text NOT NULL,
+        resource_type text NOT NULL,
+        resource_id text,
+        details jsonb DEFAULT '{}'::jsonb,
+        ip_address text,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
+    CREATE INDEX IF NOT EXISTS idx_projects_deleted_at ON public.projects(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_conversations_deleted_at ON public.conversations(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_deleted_at ON public.messages(deleted_at);
 
     CREATE INDEX IF NOT EXISTS idx_users_email ON auth.users(email);
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);

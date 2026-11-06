@@ -21,29 +21,155 @@ describe("Módulo de Autenticação (/api/auth)", () => {
     vi.restoreAllMocks();
   });
 
-  describe("POST /api/auth/register (Cadastro de Usuário)", () => {
-    it("deve cadastrar um novo usuário com sucesso e retornar status 201 com dados e sessão", async () => {
+  describe("POST /api/auth/register (Cadastro de Usuário - Aluno e Funcionário)", () => {
+    it("deve cadastrar um novo aluno com RA com sucesso e retornar status 201", async () => {
       const response = await request(app)
         .post("/api/auth/register")
         .send({
-          email: "novo.usuario@teste.com",
+          email: "aluno.ra@teste.com",
           password: "senhaSegura123",
-          name: "Novo Usuário",
+          name: "Aluno Com RA",
+          user_type: "aluno",
+          ra: "RA123456",
         });
 
       expect(response.status).toBe(201);
       expect(response.body).toHaveProperty("status", "success");
       expect(response.body.data.user).toHaveProperty("id");
-      expect(response.body.data.user.email).toBe("novo.usuario@teste.com");
-      expect(response.body.data.user.name).toBe("Novo Usuário");
+      expect(response.body.data.user.email).toBe("aluno.ra@teste.com");
+      expect(response.body.data.user.name).toBe("Aluno Com RA");
+      expect(response.body.data.user.user_type).toBe("aluno");
+      expect(response.body.data.user.ra).toBe("RA123456");
       expect(response.body.data.session).toHaveProperty("access_token");
       expect(response.body.data.session).toHaveProperty("refresh_token");
+    });
+
+    it("deve cadastrar um novo aluno com CPF com sucesso e retornar status 201", async () => {
+      const response = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "aluno.cpf@teste.com",
+          password: "senhaSegura123",
+          name: "Aluno Com CPF",
+          user_type: "aluno",
+          cpf: "123.456.789-00",
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toHaveProperty("status", "success");
+      expect(response.body.data.user.cpf).toBe("123.456.789-00");
+      expect(response.body.data.user.user_type).toBe("aluno");
+    });
+
+    it("deve cadastrar um novo funcionário com NIF com sucesso e retornar status 201", async () => {
+      const response = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "func.nif@teste.com",
+          password: "senhaSegura123",
+          name: "Funcionario Com NIF",
+          user_type: "funcionario",
+          nif: "NIF998877",
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toHaveProperty("status", "success");
+      expect(response.body.data.user.user_type).toBe("funcionario");
+      expect(response.body.data.user.nif).toBe("NIF998877");
+    });
+
+    it("deve rejeitar aluno sem RA e sem CPF com erro 400", async () => {
+      const response = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "sem.documento@teste.com",
+          password: "senhaSegura123",
+          name: "Aluno Sem Documento",
+          user_type: "aluno",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty("code", "VALIDATION_ERROR");
+      expect(response.body.details[0].message).toContain("Alunos devem obrigatoriamente informar o RA ou o CPF");
+    });
+
+    it("deve rejeitar funcionário sem NIF com erro 400", async () => {
+      const response = await request(app)
+        .post("/api/auth/register")
+        .send({
+          email: "func.sem.nif@teste.com",
+          password: "senhaSegura123",
+          name: "Func Sem NIF",
+          user_type: "funcionario",
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty("code", "VALIDATION_ERROR");
+      expect(response.body.details[0].message).toContain("NIF é obrigatório para funcionários");
+    });
+
+    it("deve rejeitar cadastro com RA duplicado retornando 400", async () => {
+      await request(app).post("/api/auth/register").send({
+        email: "primeiro.ra@teste.com",
+        password: "senhaSegura123",
+        user_type: "aluno",
+        ra: "RA-IDENTICO",
+      });
+
+      const response = await request(app).post("/api/auth/register").send({
+        email: "segundo.ra@teste.com",
+        password: "senhaSegura123",
+        user_type: "aluno",
+        ra: "RA-IDENTICO",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("Já existe um usuário cadastrado com este RA");
+    });
+
+    it("deve rejeitar cadastro com CPF duplicado retornando 400", async () => {
+      await request(app).post("/api/auth/register").send({
+        email: "primeiro.cpf@teste.com",
+        password: "senhaSegura123",
+        user_type: "aluno",
+        cpf: "111.222.333-44",
+      });
+
+      const response = await request(app).post("/api/auth/register").send({
+        email: "segundo.cpf@teste.com",
+        password: "senhaSegura123",
+        user_type: "aluno",
+        cpf: "111.222.333-44",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("Já existe um usuário cadastrado com este CPF");
+    });
+
+    it("deve rejeitar cadastro com NIF duplicado retornando 400", async () => {
+      await request(app).post("/api/auth/register").send({
+        email: "primeiro.nif@teste.com",
+        password: "senhaSegura123",
+        user_type: "funcionario",
+        nif: "NIF-IDENTICO",
+      });
+
+      const response = await request(app).post("/api/auth/register").send({
+        email: "segundo.nif@teste.com",
+        password: "senhaSegura123",
+        user_type: "funcionario",
+        nif: "NIF-IDENTICO",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("Já existe um usuário cadastrado com este NIF");
     });
 
     it("deve rejeitar cadastro com e-mail duplicado retornando 400", async () => {
       await request(app).post("/api/auth/register").send({
         email: "duplicado@teste.com",
         password: "senhaSegura123",
+        ra: "RA001",
       });
 
       const response = await request(app)
@@ -51,6 +177,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         .send({
           email: "duplicado@teste.com",
           password: "outraSenha123",
+          ra: "RA002",
         });
 
       expect(response.status).toBe(400);
@@ -64,6 +191,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         .send({
           email: "email-invalido",
           password: "senhaSegura123",
+          ra: "RA999",
         });
 
       expect(response.status).toBe(400);
@@ -77,6 +205,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         .send({
           email: "usuario@teste.com",
           password: "123",
+          ra: "RA888",
         });
 
       expect(response.status).toBe(400);
@@ -91,6 +220,8 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         email: "cadastrado@teste.com",
         password: "senhaCorreta123",
         name: "Cadastrado",
+        user_type: "aluno",
+        ra: "RA-LOGIN",
       });
     });
 
@@ -105,6 +236,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty("status", "success");
       expect(response.body.data.user.email).toBe("cadastrado@teste.com");
+      expect(response.body.data.user.ra).toBe("RA-LOGIN");
       expect(response.body.data.session).toHaveProperty("access_token");
       expect(response.body.data.session.token_type).toBe("Bearer");
     });
@@ -142,6 +274,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         .send({
           email: "refresh@teste.com",
           password: "senhaSegura123",
+          ra: "RA-REFRESH",
         });
 
       const refreshToken = registerRes.body.data.session.refresh_token;
@@ -178,6 +311,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
           email: "perfil@teste.com",
           password: "senhaSegura123",
           name: "Perfil Teste",
+          ra: "RA-PERFIL",
         });
 
       const token = registerRes.body.data.session.access_token;
@@ -191,6 +325,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
       expect(meRes.body.data.user).toHaveProperty("id");
       expect(meRes.body.data.user.email).toBe("perfil@teste.com");
       expect(meRes.body.data.user.name).toBe("Perfil Teste");
+      expect(meRes.body.data.user.ra).toBe("RA-PERFIL");
     });
   });
 
@@ -202,6 +337,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
           email: "atualiza.nome@teste.com",
           password: "senhaSegura123",
           name: "Nome Antigo",
+          ra: "RA-NOME",
         });
 
       const token = reg.body.data.session.access_token;
@@ -232,6 +368,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         .send({
           email: "nome.invalido@teste.com",
           password: "senhaSegura123",
+          ra: "RA-INVALID",
         });
 
       const token = reg.body.data.session.access_token;
@@ -266,6 +403,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
           email: "troca.senha@teste.com",
           password: "senhaAtual123",
           name: "Troca Senha",
+          ra: "RA-PASS",
         });
 
       const token = reg.body.data.session.access_token;
@@ -300,6 +438,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         .send({
           email: "senha.errada@teste.com",
           password: "senhaCorretaOriginal",
+          ra: "RA-PASS2",
         });
 
       const token = reg.body.data.session.access_token;
@@ -322,6 +461,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         .send({
           email: "senha.curta@teste.com",
           password: "senhaAtual123",
+          ra: "RA-PASS3",
         });
 
       const token = reg.body.data.session.access_token;
@@ -356,6 +496,7 @@ describe("Módulo de Autenticação (/api/auth)", () => {
         supabaseAuth.register({
           email: "existente@supabase.com",
           password: "senhaSegura123",
+          ra: "RA-SUPA",
         })
       ).rejects.toThrow("User already registered");
     });

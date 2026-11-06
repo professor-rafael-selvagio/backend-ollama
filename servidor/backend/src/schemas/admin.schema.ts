@@ -11,3 +11,19 @@ export const updateUserRoleSchema = z.object({
 });
 
 export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>;
+
+/**
+ * Schema de validação para restauração de item excluído logicamente
+ */
+export const restoreItemSchema = z.object({
+  resource_type: z.enum(["conversation", "project"], {
+    required_error: "O tipo de recurso (resource_type) é obrigatório.",
+  }),
+  resource_id: z
+    .string({
+      required_error: "O ID do recurso (resource_id) é obrigatório.",
+    })
+    .min(1, "O ID do recurso não pode ser vazio."),
+});
+
+export type RestoreItemInput = z.infer<typeof restoreItemSchema>;

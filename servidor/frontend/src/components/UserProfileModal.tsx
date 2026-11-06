@@ -9,6 +9,8 @@ import {
   AlertCircle,
   Loader2,
   ShieldCheck,
+  GraduationCap,
+  Briefcase,
 } from "lucide-react";
 import { User } from "../types";
 import { api } from "../services/api";
@@ -205,6 +207,35 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <p className="text-sm font-medium text-slate-200 truncate">
                   {user.email}
                 </p>
+              </div>
+
+              {/* Exibição de Perfil Institucional e Documentos */}
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Perfil Institucional
+                  </span>
+                  <div className="text-sm font-medium text-slate-200 flex items-center gap-2 mt-0.5">
+                    {user.user_type === "funcionario" ? (
+                      <span className="text-purple-400 flex items-center gap-1">
+                        <Briefcase size={14} /> Funcionário SENAI
+                      </span>
+                    ) : (
+                      <span className="text-sky-400 flex items-center gap-1">
+                        <GraduationCap size={14} /> Aluno
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {user.nif ? "NIF" : user.ra ? "RA" : user.cpf ? "CPF" : "Identificador"}
+                  </span>
+                  <div className="text-xs font-mono font-medium text-white mt-0.5">
+                    {user.nif || user.ra || user.cpf || "-"}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

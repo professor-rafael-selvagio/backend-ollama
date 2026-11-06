@@ -1,7 +1,13 @@
+export type UserType = "aluno" | "funcionario";
+
 export interface User {
   id: string;
   email: string;
   name?: string;
+  user_type?: UserType;
+  ra?: string;
+  cpf?: string;
+  nif?: string;
   role?: string;
   is_admin?: boolean;
   last_seen_at?: string;
@@ -57,6 +63,11 @@ export interface AdminUser {
   id: string;
   name: string;
   email: string;
+  user_type?: UserType;
+  ra?: string;
+  cpf?: string;
+  nif?: string;
+  deleted_at?: string | null;
   is_admin: boolean;
   is_online: boolean;
   last_seen_at: string;
@@ -70,11 +81,37 @@ export interface AdminUser {
 
 export interface AdminMetrics {
   total_users: number;
+  total_alunos: number;
+  total_funcionarios: number;
   online_users: number;
   total_conversations: number;
+  deleted_conversations: number;
+  deleted_projects: number;
   total_messages: number;
   total_prompt_tokens: number;
   total_completion_tokens: number;
   total_tokens: number;
 }
 
+export interface AdminDeletedItem {
+  id: string;
+  resource_type: "conversation" | "project";
+  title: string;
+  user_id: string;
+  user_email?: string;
+  user_name?: string;
+  created_at: string;
+  deleted_at: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  action: string;
+  resource_type: string;
+  resource_id?: string | null;
+  details?: Record<string, unknown>;
+  ip_address?: string | null;
+  created_at: string;
+}

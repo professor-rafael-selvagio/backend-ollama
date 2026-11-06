@@ -11,17 +11,10 @@ import {
   ChangePasswordInput,
   UpdateProfileInput,
 } from "../schemas/auth.schema";
+import { AuthUser, UserType } from "../types";
 import { UnauthorizedError, ValidationError } from "../utils/errors";
 import { logger } from "../utils/logger";
-
-export interface AuthUser {
-  id: string;
-  email: string;
-  name?: string;
-  role?: string;
-  is_admin?: boolean;
-  last_seen_at?: string;
-}
+import { getAuditService } from "./audit.service";
 
 export interface AuthSession {
   access_token: string;
@@ -59,7 +52,7 @@ export class PostgresAuthService implements IAuthService {
   public async register(input: RegisterInput): Promise<AuthResult> {
     const emailKey = input.email.toLowerCase();
 
-    // Verifica se já existe usuário cadastrado
+    // Verifica se já existe usuário cadastrado com este e-mail
     const existing = await this.pool.query(
       "SELECT id FROM auth.users WHERE lower(email) = lower($1) LIMIT 1",
       [emailKey]
@@ -69,16 +62,52 @@ export class PostgresAuthService implements IAuthService {
       throw new ValidationError("Este e-mail já está cadastrado.");
     }
 
+    // Validação de unicidade para RA, CPF e NIF
+    const userType: UserType = input.user_type || "aluno";
+    const ra = input.ra?.trim() || null;
+    const cpf = input.cpf?.trim() || null;
+    const nif = input.nif?.trim() || null;
+
+    if (ra) {
+      const existingRa = await this.pool.query(
+        "SELECT id FROM auth.users WHERE lower(ra) = lower($1) AND deleted_at IS NULL LIMIT 1",
+        [ra]
+      );
+      if (existingRa.rowCount && existingRa.rowCount > 0) {
+        throw new ValidationError("Já existe um usuário cadastrado com este RA.");
+      }
+    }
+
+    if (cpf) {
+      const existingCpf = await this.pool.query(
+        "SELECT id FROM auth.users WHERE lower(cpf) = lower($1) AND deleted_at IS NULL LIMIT 1",
+        [cpf]
+      );
+      if (existingCpf.rowCount && existingCpf.rowCount > 0) {
+        throw new ValidationError("Já existe um usuário cadastrado com este CPF.");
+      }
+    }
+
+    if (nif) {
+      const existingNif = await this.pool.query(
+        "SELECT id FROM auth.users WHERE lower(nif) = lower($1) AND deleted_at IS NULL LIMIT 1",
+        [nif]
+      );
+      if (existingNif.rowCount && existingNif.rowCount > 0) {
+        throw new ValidationError("Já existe um usuário cadastrado com este NIF.");
+      }
+    }
+
     // Hash da senha com bcrypt
     const passwordHash = await bcrypt.hash(input.password, 10);
     const metadata = input.name ? { name: input.name } : {};
     const isAdmin = emailKey === "rselvagio@sp.senai.br";
 
     const insertResult = await this.pool.query(
-      `INSERT INTO auth.users (email, password_hash, raw_user_meta_data, is_admin, last_seen_at)
-       VALUES ($1, $2, $3, $4, now())
-       RETURNING id, email, created_at, is_admin, last_seen_at`,
-      [emailKey, passwordHash, JSON.stringify(metadata), isAdmin]
+      `INSERT INTO auth.users (email, password_hash, raw_user_meta_data, is_admin, last_seen_at, user_type, ra, cpf, nif)
+       VALUES ($1, $2, $3, $4, now(), $5, $6, $7, $8)
+       RETURNING id, email, created_at, is_admin, last_seen_at, user_type, ra, cpf, nif`,
+      [emailKey, passwordHash, JSON.stringify(metadata), isAdmin, userType, ra, cpf, nif]
     );
 
     const user = insertResult.rows[0];
@@ -96,12 +125,26 @@ export class PostgresAuthService implements IAuthService {
       { expiresIn: "30d" }
     );
 
+    // Auditoria
+    await getAuditService().log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "AUTH_REGISTER",
+      resourceType: "user",
+      resourceId: user.id,
+      details: { user_type: userType, has_ra: !!ra, has_cpf: !!cpf, has_nif: !!nif },
+    });
+
     return {
       user: {
         id: user.id,
         email: user.email,
         name: input.name,
         role: "authenticated",
+        user_type: user.user_type,
+        ra: user.ra,
+        cpf: user.cpf,
+        nif: user.nif,
         is_admin: user.is_admin,
       },
       session: {
@@ -142,6 +185,17 @@ export class PostgresAuthService implements IAuthService {
 
     // Atualiza última atividade de forma não bloqueante
     this.pool.query("UPDATE auth.users SET last_seen_at = now() WHERE id = $1", [user.id]).catch(() => {});
+
+    // Registra log de auditoria de autenticação
+    getAuditService()
+      .log({
+        userId: user.id,
+        userEmail: user.email,
+        action: "AUTH_LOGIN",
+        resourceType: "user",
+        resourceId: user.id,
+      })
+      .catch(() => {});
 
     const access_token = jwt.sign(
       { sub: user.id, email: user.email, role: "authenticated", name, is_admin: isAdmin },
@@ -248,6 +302,14 @@ export class PostgresAuthService implements IAuthService {
       [newHash, userId]
     );
 
+    await getAuditService().log({
+      userId,
+      userEmail: user.email,
+      action: "AUTH_CHANGE_PASSWORD",
+      resourceType: "user",
+      resourceId: userId,
+    });
+
     return { message: "Senha alterada com sucesso." };
   }
 
@@ -282,7 +344,7 @@ export class PostgresAuthService implements IAuthService {
 
   public async getProfile(userId: string): Promise<AuthUser> {
     const userRes = await this.pool.query(
-      "SELECT id, email, raw_user_meta_data, is_admin, last_seen_at FROM auth.users WHERE id = $1 LIMIT 1",
+      "SELECT id, email, raw_user_meta_data, is_admin, last_seen_at, user_type, ra, cpf, nif FROM auth.users WHERE id = $1 LIMIT 1",
       [userId]
     );
 
@@ -300,6 +362,10 @@ export class PostgresAuthService implements IAuthService {
       name: name || undefined,
       role: "authenticated",
       is_admin: isAdmin,
+      user_type: user.user_type,
+      ra: user.ra,
+      cpf: user.cpf,
+      nif: user.nif,
       last_seen_at: user.last_seen_at ? new Date(user.last_seen_at).toISOString() : undefined,
     };
   }
@@ -473,8 +539,13 @@ export class InMemoryAuthService implements IAuthService {
       email: string;
       passwordHash: string;
       name?: string;
+      user_type?: UserType;
+      ra?: string;
+      cpf?: string;
+      nif?: string;
       is_admin?: boolean;
       last_seen_at?: string;
+      deleted_at?: string | null;
       created_at: string;
     }
   > = new Map();
@@ -483,6 +554,39 @@ export class InMemoryAuthService implements IAuthService {
     const emailKey = input.email.toLowerCase();
     if (this.users.has(emailKey)) {
       throw new ValidationError("Este e-mail já está cadastrado.");
+    }
+
+    // Validação de unicidade para RA, CPF e NIF
+    const userType: UserType = input.user_type || "aluno";
+    const ra = input.ra?.trim();
+    const cpf = input.cpf?.trim();
+    const nif = input.nif?.trim();
+
+    if (ra) {
+      const lower = ra.toLowerCase();
+      for (const u of this.users.values()) {
+        if (u.ra && u.ra.toLowerCase() === lower && !u.deleted_at) {
+          throw new ValidationError("Já existe um usuário cadastrado com este RA.");
+        }
+      }
+    }
+
+    if (cpf) {
+      const lower = cpf.toLowerCase();
+      for (const u of this.users.values()) {
+        if (u.cpf && u.cpf.toLowerCase() === lower && !u.deleted_at) {
+          throw new ValidationError("Já existe um usuário cadastrado com este CPF.");
+        }
+      }
+    }
+
+    if (nif) {
+      const lower = nif.toLowerCase();
+      for (const u of this.users.values()) {
+        if (u.nif && u.nif.toLowerCase() === lower && !u.deleted_at) {
+          throw new ValidationError("Já existe um usuário cadastrado com este NIF.");
+        }
+      }
     }
 
     const id = crypto.randomUUID();
@@ -498,9 +602,22 @@ export class InMemoryAuthService implements IAuthService {
       email: emailKey,
       passwordHash,
       name: input.name,
+      user_type: userType,
+      ra,
+      cpf,
+      nif,
       is_admin: isAdmin,
       last_seen_at: now,
       created_at: now,
+    });
+
+    await getAuditService().log({
+      userId: id,
+      userEmail: emailKey,
+      action: "AUTH_REGISTER",
+      resourceType: "user",
+      resourceId: id,
+      details: { user_type: userType, has_ra: !!ra, has_cpf: !!cpf, has_nif: !!nif },
     });
 
     return {
@@ -509,6 +626,10 @@ export class InMemoryAuthService implements IAuthService {
         email: emailKey,
         name: input.name,
         role: "authenticated",
+        user_type: userType,
+        ra,
+        cpf,
+        nif,
         is_admin: isAdmin,
         last_seen_at: now,
       },
@@ -537,12 +658,24 @@ export class InMemoryAuthService implements IAuthService {
     user.last_seen_at = new Date().toISOString();
     const isAdmin = Boolean(user.is_admin || user.email === "rselvagio@sp.senai.br");
 
+    await getAuditService().log({
+      userId: user.id,
+      userEmail: user.email,
+      action: "AUTH_LOGIN",
+      resourceType: "user",
+      resourceId: user.id,
+    });
+
     return {
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: "authenticated",
+        user_type: user.user_type,
+        ra: user.ra,
+        cpf: user.cpf,
+        nif: user.nif,
         is_admin: isAdmin,
         last_seen_at: user.last_seen_at,
       },
@@ -609,6 +742,14 @@ export class InMemoryAuthService implements IAuthService {
       .update(input.newPassword)
       .digest("hex");
 
+    await getAuditService().log({
+      userId,
+      userEmail: foundUser.email,
+      action: "AUTH_CHANGE_PASSWORD",
+      resourceType: "user",
+      resourceId: userId,
+    });
+
     return { message: "Senha alterada com sucesso." };
   }
 
@@ -621,6 +762,10 @@ export class InMemoryAuthService implements IAuthService {
       email: string;
       passwordHash: string;
       name?: string;
+      user_type?: UserType;
+      ra?: string;
+      cpf?: string;
+      nif?: string;
       is_admin?: boolean;
       last_seen_at?: string;
       created_at: string;
@@ -645,6 +790,10 @@ export class InMemoryAuthService implements IAuthService {
       email: foundUser.email,
       name: foundUser.name,
       role: "authenticated",
+      user_type: foundUser.user_type,
+      ra: foundUser.ra,
+      cpf: foundUser.cpf,
+      nif: foundUser.nif,
       is_admin: isAdmin,
       last_seen_at: foundUser.last_seen_at,
     };
@@ -656,6 +805,10 @@ export class InMemoryAuthService implements IAuthService {
       email: string;
       passwordHash: string;
       name?: string;
+      user_type?: UserType;
+      ra?: string;
+      cpf?: string;
+      nif?: string;
       is_admin?: boolean;
       last_seen_at?: string;
       created_at: string;
@@ -679,6 +832,10 @@ export class InMemoryAuthService implements IAuthService {
       email: foundUser.email,
       name: foundUser.name,
       role: "authenticated",
+      user_type: foundUser.user_type,
+      ra: foundUser.ra,
+      cpf: foundUser.cpf,
+      nif: foundUser.nif,
       is_admin: isAdmin,
       last_seen_at: foundUser.last_seen_at,
     };
@@ -701,6 +858,12 @@ export class InMemoryAuthService implements IAuthService {
     for (const u of this.users.values()) {
       if (u.id === userId) {
         u.is_admin = isAdmin;
+        getAuditService().log({
+          action: isAdmin ? "ADMIN_GRANT" : "ADMIN_REVOKE",
+          resourceType: "user",
+          resourceId: userId,
+          details: { is_admin: isAdmin },
+        }).catch(() => {});
         return true;
       }
     }

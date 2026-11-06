@@ -16,3 +16,12 @@ adminRoutes.get("/users", defaultAdminController.getUsers);
 
 // Alteração de permissão administrativa de um usuário
 adminRoutes.patch("/users/:id/role", defaultAdminController.updateUserRole);
+
+// Aba exclusiva da Lixeira: Itens excluídos logicamente
+adminRoutes.get("/deleted", defaultAdminController.getDeleted);
+
+// Restauração de item excluído logicamente
+adminRoutes.post("/restore", defaultAdminController.restoreItem);
+
+// Histórico de auditoria do sistema
+adminRoutes.get("/audit-logs", defaultAdminController.getAuditLogs);

@@ -81,13 +81,20 @@ export interface OllamaChatResponse {
   eval_duration?: number;
 }
 
+export type UserType = "aluno" | "funcionario";
+
 export interface AuthUser {
   id: string;
   email?: string;
   name?: string;
   role?: string;
+  user_type?: UserType;
+  ra?: string;
+  cpf?: string;
+  nif?: string;
   is_admin?: boolean;
   last_seen_at?: string;
+  deleted_at?: string | null;
   app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
 }
@@ -98,6 +105,7 @@ export interface Project {
   name: string;
   description?: string | null;
   color: string;
+  deleted_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -108,6 +116,7 @@ export interface Conversation {
   project_id?: string | null;
   title: string;
   model: string;
+  deleted_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -125,6 +134,7 @@ export interface DatabaseMessage {
   tokens?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
+  deleted_at?: string | null;
   created_at: string;
 }
 
@@ -136,6 +146,10 @@ export interface AdminUserSummary {
   id: string;
   name: string;
   email: string;
+  user_type?: UserType;
+  ra?: string;
+  cpf?: string;
+  nif?: string;
   is_admin: boolean;
   is_online: boolean;
   last_seen_at: string;
@@ -149,12 +163,44 @@ export interface AdminUserSummary {
 
 export interface AdminMetricsResponse {
   total_users: number;
+  total_alunos: number;
+  total_funcionarios: number;
   online_users: number;
   total_conversations: number;
   total_messages: number;
+  deleted_conversations: number;
+  deleted_projects: number;
   total_prompt_tokens: number;
   total_completion_tokens: number;
   total_tokens: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  action: string;
+  resource_type: string;
+  resource_id?: string | null;
+  details?: Record<string, unknown>;
+  ip_address?: string | null;
+  created_at: string;
+}
+
+export interface AdminDeletedItem {
+  id: string;
+  resource_type: "conversation" | "project";
+  title: string;
+  user_id: string;
+  user_email?: string;
+  user_name?: string;
+  created_at: string;
+  deleted_at: string;
+}
+
+export interface RestoreItemInput {
+  resource_type: "conversation" | "project";
+  resource_id: string;
 }
 
 export interface UpdateUserRoleInput {

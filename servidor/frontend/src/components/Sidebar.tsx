@@ -82,16 +82,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         {/* Topo / Logo */}
         <div className="p-4 border-b border-slate-800/60 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-col items-center gap-3 w-full">
             <img
               src="/logo-senai.png"
               alt="SENAI"
-              className="h-7 w-auto object-contain rounded"
+              className="w-full h-auto object-contain rounded"
             />
-            <div>
+
+            <div className="text-center">
               <h2 className="font-bold text-sm tracking-tight text-white leading-tight">
-                SENAI 6.01
+                Escola SENAI "Antonio A. Lobbe"
               </h2>
+
               <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
                 Servidor Didático - IA
               </span>
@@ -342,8 +344,8 @@ const ChatItem: React.FC<ChatItemProps> = ({
     <div
       onClick={onSelect}
       className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${isActive
-          ? "bg-slate-800 text-white font-medium"
-          : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
+        ? "bg-slate-800 text-white font-medium"
+        : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
         }`}
     >
       <div className="flex items-center gap-2 truncate flex-1 mr-1">

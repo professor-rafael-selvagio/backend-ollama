@@ -1,10 +1,23 @@
 import { Pool } from "pg";
 import { getDbPool } from "../config/database";
 import { env } from "../config/env";
-import { AdminMetricsResponse, AdminUserSummary } from "../types";
+import {
+  AdminDeletedItem,
+  AdminMetricsResponse,
+  AdminUserSummary,
+  AuditLogEntry,
+} from "../types";
 import { ForbiddenError, NotFoundError } from "../utils/errors";
+import { getAuditService } from "./audit.service";
 import { getAuthService, InMemoryAuthService } from "./auth.service";
-import { defaultConversationService } from "./conversation.service";
+import {
+  defaultConversationService,
+  InMemoryConversationRepository,
+} from "./conversation.service";
+import {
+  defaultProjectService,
+  InMemoryProjectRepository,
+} from "./project.service";
 
 export const SUPERADMIN_EMAIL = "rselvagio@sp.senai.br";
 
@@ -16,6 +29,12 @@ export interface IAdminService {
     targetUserId: string,
     isAdmin: boolean
   ): Promise<AdminUserSummary>;
+  getDeletedItems(): Promise<AdminDeletedItem[]>;
+  restoreItem(
+    resourceType: "conversation" | "project",
+    resourceId: string
+  ): Promise<{ success: boolean; message: string }>;
+  getAuditLogs(limit?: number, offset?: number): Promise<AuditLogEntry[]>;
 }
 
 /**
@@ -32,12 +51,23 @@ export class PostgresAdminService implements IAdminService {
     const usersCountRes = await this.pool.query(
       `SELECT 
          count(*)::int as total_users,
+         count(*) FILTER (WHERE user_type = 'aluno' OR user_type IS NULL)::int as total_alunos,
+         count(*) FILTER (WHERE user_type = 'funcionario')::int as total_funcionarios,
          count(*) FILTER (WHERE last_seen_at >= now() - interval '3 minutes')::int as online_users
        FROM auth.users`
     );
 
     const convCountRes = await this.pool.query(
-      "SELECT count(*)::int as total_conversations FROM public.conversations"
+      `SELECT 
+         count(*) FILTER (WHERE deleted_at IS NULL)::int as total_conversations,
+         count(*) FILTER (WHERE deleted_at IS NOT NULL)::int as deleted_conversations
+       FROM public.conversations`
+    );
+
+    const projCountRes = await this.pool.query(
+      `SELECT 
+         count(*) FILTER (WHERE deleted_at IS NOT NULL)::int as deleted_projects
+       FROM public.projects`
     );
 
     const messagesRes = await this.pool.query(
@@ -49,16 +79,24 @@ export class PostgresAdminService implements IAdminService {
     );
 
     const totalUsers = usersCountRes.rows[0]?.total_users || 0;
+    const totalAlunos = usersCountRes.rows[0]?.total_alunos || 0;
+    const totalFuncionarios = usersCountRes.rows[0]?.total_funcionarios || 0;
     const onlineUsers = usersCountRes.rows[0]?.online_users || 0;
     const totalConversations = convCountRes.rows[0]?.total_conversations || 0;
+    const deletedConversations = convCountRes.rows[0]?.deleted_conversations || 0;
+    const deletedProjects = projCountRes.rows[0]?.deleted_projects || 0;
     const totalMessages = messagesRes.rows[0]?.total_messages || 0;
     const totalPromptTokens = messagesRes.rows[0]?.total_prompt_tokens || 0;
     const totalCompletionTokens = messagesRes.rows[0]?.total_completion_tokens || 0;
 
     return {
       total_users: totalUsers,
+      total_alunos: totalAlunos,
+      total_funcionarios: totalFuncionarios,
       online_users: onlineUsers,
       total_conversations: totalConversations,
+      deleted_conversations: deletedConversations,
+      deleted_projects: deletedProjects,
       total_messages: totalMessages,
       total_prompt_tokens: totalPromptTokens,
       total_completion_tokens: totalCompletionTokens,
@@ -72,18 +110,23 @@ export class PostgresAdminService implements IAdminService {
          u.id,
          COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1)) as name,
          u.email,
+         u.user_type,
+         u.ra,
+         u.cpf,
+         u.nif,
+         u.deleted_at,
          u.is_admin,
          u.created_at,
          u.last_seen_at,
          (u.last_seen_at >= now() - interval '3 minutes') as is_online,
-         COUNT(DISTINCT c.id)::int as total_conversations,
-         COUNT(DISTINCT m.id)::int as total_messages,
+         COUNT(DISTINCT c.id) FILTER (WHERE c.deleted_at IS NULL)::int as total_conversations,
+         COUNT(DISTINCT m.id) FILTER (WHERE m.deleted_at IS NULL)::int as total_messages,
          COALESCE(SUM(m.prompt_tokens), 0)::int as total_prompt_tokens,
          COALESCE(SUM(COALESCE(m.completion_tokens, m.tokens, 0)), 0)::int as total_completion_tokens
        FROM auth.users u
        LEFT JOIN public.conversations c ON c.user_id = u.id
        LEFT JOIN public.messages m ON m.user_id = u.id
-       GROUP BY u.id, u.email, u.raw_user_meta_data, u.is_admin, u.created_at, u.last_seen_at
+       GROUP BY u.id, u.email, u.raw_user_meta_data, u.user_type, u.ra, u.cpf, u.nif, u.deleted_at, u.is_admin, u.created_at, u.last_seen_at
        ORDER BY (u.last_seen_at >= now() - interval '3 minutes') DESC, u.created_at DESC`
     );
 
@@ -97,6 +140,10 @@ export class PostgresAdminService implements IAdminService {
         id: row.id,
         name: row.name || row.email,
         email: row.email,
+        user_type: row.user_type || "aluno",
+        ra: row.ra || undefined,
+        cpf: row.cpf || undefined,
+        nif: row.nif || undefined,
         is_admin: isAdmin,
         is_online: Boolean(row.is_online),
         last_seen_at: row.last_seen_at ? new Date(row.last_seen_at).toISOString() : new Date().toISOString(),
@@ -111,7 +158,7 @@ export class PostgresAdminService implements IAdminService {
   }
 
   public async updateUserRole(
-    _adminUserId: string,
+    adminUserId: string,
     targetUserId: string,
     isAdmin: boolean
   ): Promise<AdminUserSummary> {
@@ -139,12 +186,121 @@ export class PostgresAdminService implements IAdminService {
       [isAdmin, targetUserId]
     );
 
+    await getAuditService().log({
+      userId: adminUserId,
+      action: isAdmin ? "ADMIN_GRANT" : "ADMIN_REVOKE",
+      resourceType: "user",
+      resourceId: targetUserId,
+      details: { targetEmail: targetUser.email, is_admin: isAdmin },
+    });
+
     const allUsers = await this.getUsers();
     const updated = allUsers.find((u) => u.id === targetUserId);
     if (!updated) {
       throw new NotFoundError("Erro ao recuperar usuário atualizado.");
     }
     return updated;
+  }
+
+  public async getDeletedItems(): Promise<AdminDeletedItem[]> {
+    const conversationsRes = await this.pool.query(
+      `SELECT 
+         c.id,
+         c.title,
+         c.user_id,
+         c.created_at,
+         c.deleted_at,
+         u.email as user_email,
+         COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1)) as user_name
+       FROM public.conversations c
+       LEFT JOIN auth.users u ON u.id = c.user_id
+       WHERE c.deleted_at IS NOT NULL`
+    );
+
+    const projectsRes = await this.pool.query(
+      `SELECT 
+         p.id,
+         p.name as title,
+         p.user_id,
+         p.created_at,
+         p.deleted_at,
+         u.email as user_email,
+         COALESCE(u.raw_user_meta_data->>'name', split_part(u.email, '@', 1)) as user_name
+       FROM public.projects p
+       LEFT JOIN auth.users u ON u.id = p.user_id
+       WHERE p.deleted_at IS NOT NULL`
+    );
+
+    const items: AdminDeletedItem[] = [
+      ...conversationsRes.rows.map((row) => ({
+        id: row.id,
+        resource_type: "conversation" as const,
+        title: row.title,
+        user_id: row.user_id,
+        user_email: row.user_email,
+        user_name: row.user_name,
+        created_at: new Date(row.created_at).toISOString(),
+        deleted_at: new Date(row.deleted_at).toISOString(),
+      })),
+      ...projectsRes.rows.map((row) => ({
+        id: row.id,
+        resource_type: "project" as const,
+        title: row.title,
+        user_id: row.user_id,
+        user_email: row.user_email,
+        user_name: row.user_name,
+        created_at: new Date(row.created_at).toISOString(),
+        deleted_at: new Date(row.deleted_at).toISOString(),
+      })),
+    ];
+
+    return items.sort(
+      (a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime()
+    );
+  }
+
+  public async restoreItem(
+    resourceType: "conversation" | "project",
+    resourceId: string
+  ): Promise<{ success: boolean; message: string }> {
+    if (resourceType === "conversation") {
+      const res = await this.pool.query(
+        "UPDATE public.conversations SET deleted_at = NULL WHERE id = $1 RETURNING id",
+        [resourceId]
+      );
+      if (!res.rowCount || res.rowCount === 0) {
+        throw new NotFoundError("Conversa não encontrada para restauração.");
+      }
+    } else {
+      const res = await this.pool.query(
+        "UPDATE public.projects SET deleted_at = NULL WHERE id = $1 RETURNING id",
+        [resourceId]
+      );
+      if (!res.rowCount || res.rowCount === 0) {
+        throw new NotFoundError("Projeto não encontrado para restauração.");
+      }
+      await this.pool.query(
+        "UPDATE public.conversations SET deleted_at = NULL WHERE project_id = $1",
+        [resourceId]
+      );
+    }
+
+    await getAuditService().log({
+      action: "RESTORE_RESOURCE",
+      resourceType,
+      resourceId,
+    });
+
+    return {
+      success: true,
+      message: `${
+        resourceType === "conversation" ? "Conversa" : "Projeto"
+      } restaurado(a) com sucesso.`,
+    };
+  }
+
+  public async getAuditLogs(limit = 100, offset = 0): Promise<AuditLogEntry[]> {
+    return getAuditService().getLogs(limit, offset);
   }
 }
 
@@ -164,16 +320,36 @@ export class InMemoryAdminService implements IAdminService {
     const threeMinMs = 3 * 60 * 1000;
 
     let onlineUsers = 0;
+    let totalAlunos = 0;
+    let totalFuncionarios = 0;
+
     for (const u of users) {
       if (u.last_seen_at && now - new Date(u.last_seen_at).getTime() <= threeMinMs) {
         onlineUsers++;
       }
+      if (u.user_type === "funcionario") {
+        totalFuncionarios++;
+      } else {
+        totalAlunos++;
+      }
     }
+
+    const deletedItems = await this.getDeletedItems();
+    const deletedConversations = deletedItems.filter(
+      (item) => item.resource_type === "conversation"
+    ).length;
+    const deletedProjects = deletedItems.filter(
+      (item) => item.resource_type === "project"
+    ).length;
 
     return {
       total_users: users.length,
+      total_alunos: totalAlunos,
+      total_funcionarios: totalFuncionarios,
       online_users: onlineUsers,
       total_conversations: 0,
+      deleted_conversations: deletedConversations,
+      deleted_projects: deletedProjects,
       total_messages: 0,
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
@@ -197,6 +373,10 @@ export class InMemoryAdminService implements IAdminService {
         id: u.id,
         name: u.name || u.email,
         email: u.email,
+        user_type: u.user_type || "aluno",
+        ra: u.ra,
+        cpf: u.cpf,
+        nif: u.nif,
         is_admin: isAdmin,
         is_online: isOnline,
         last_seen_at: u.last_seen_at || new Date().toISOString(),
@@ -211,7 +391,7 @@ export class InMemoryAdminService implements IAdminService {
   }
 
   public async updateUserRole(
-    _adminUserId: string,
+    adminUserId: string,
     targetUserId: string,
     isAdmin: boolean
   ): Promise<AdminUserSummary> {
@@ -233,8 +413,112 @@ export class InMemoryAdminService implements IAdminService {
 
     this.inMemoryAuth.setUserAdmin(targetUserId, isAdmin);
 
+    await getAuditService().log({
+      userId: adminUserId,
+      action: isAdmin ? "ADMIN_GRANT" : "ADMIN_REVOKE",
+      resourceType: "user",
+      resourceId: targetUserId,
+      details: { targetEmail: targetUser.email, is_admin: isAdmin },
+    });
+
     const all = await this.getUsers();
     return all.find((u) => u.id === targetUserId)!;
+  }
+
+  public async getDeletedItems(): Promise<AdminDeletedItem[]> {
+    const items: AdminDeletedItem[] = [];
+    const users = this.inMemoryAuth.getUsersList();
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const convRepo = defaultConversationService.getRepository();
+    if (convRepo instanceof InMemoryConversationRepository) {
+      for (const conv of convRepo.getAllConversations()) {
+        if (conv.deleted_at) {
+          const user = userMap.get(conv.user_id);
+          items.push({
+            id: conv.id,
+            resource_type: "conversation",
+            title: conv.title,
+            user_id: conv.user_id,
+            user_email: user?.email,
+            user_name: user?.name || user?.email,
+            created_at: conv.created_at,
+            deleted_at: conv.deleted_at,
+          });
+        }
+      }
+    }
+
+    const projRepo = defaultProjectService.getRepository();
+    if (projRepo instanceof InMemoryProjectRepository) {
+      for (const proj of projRepo.getAllProjects()) {
+        if (proj.deleted_at) {
+          const user = userMap.get(proj.user_id);
+          items.push({
+            id: proj.id,
+            resource_type: "project",
+            title: proj.name,
+            user_id: proj.user_id,
+            user_email: user?.email,
+            user_name: user?.name || user?.email,
+            created_at: proj.created_at,
+            deleted_at: proj.deleted_at,
+          });
+        }
+      }
+    }
+
+    return items.sort(
+      (a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime()
+    );
+  }
+
+  public async restoreItem(
+    resourceType: "conversation" | "project",
+    resourceId: string
+  ): Promise<{ success: boolean; message: string }> {
+    if (resourceType === "conversation") {
+      const convRepo = defaultConversationService.getRepository();
+      if (convRepo instanceof InMemoryConversationRepository) {
+        const restored = convRepo.restoreConversation(resourceId);
+        if (!restored) {
+          throw new NotFoundError("Conversa não encontrada para restauração.");
+        }
+      }
+    } else {
+      const projRepo = defaultProjectService.getRepository();
+      if (projRepo instanceof InMemoryProjectRepository) {
+        const restored = projRepo.restoreProject(resourceId);
+        if (!restored) {
+          throw new NotFoundError("Projeto não encontrado para restauração.");
+        }
+      }
+      const convRepo = defaultConversationService.getRepository();
+      if (convRepo instanceof InMemoryConversationRepository) {
+        for (const c of convRepo.getAllConversations()) {
+          if (c.project_id === resourceId && c.deleted_at) {
+            convRepo.restoreConversation(c.id);
+          }
+        }
+      }
+    }
+
+    await getAuditService().log({
+      action: "RESTORE_RESOURCE",
+      resourceType,
+      resourceId,
+    });
+
+    return {
+      success: true,
+      message: `${
+        resourceType === "conversation" ? "Conversa" : "Projeto"
+      } restaurado(a) com sucesso.`,
+    };
+  }
+
+  public async getAuditLogs(limit = 100, offset = 0): Promise<AuditLogEntry[]> {
+    return getAuditService().getLogs(limit, offset);
   }
 }
 
