@@ -19,15 +19,18 @@ export class OllamaService {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly allowedModels: string[];
+  private readonly keepAlive: string;
 
   constructor(
     baseUrl = env.OLLAMA_BASE_URL,
     timeoutMs = env.OLLAMA_TIMEOUT,
-    allowedModels = env.ALLOWED_MODELS
+    allowedModels = env.ALLOWED_MODELS,
+    keepAlive = env.OLLAMA_KEEP_ALIVE
   ) {
     this.baseUrl = baseUrl;
     this.timeoutMs = timeoutMs;
     this.allowedModels = allowedModels;
+    this.keepAlive = keepAlive;
   }
 
   /**
@@ -185,6 +188,7 @@ export class OllamaService {
       method: "POST",
       body: JSON.stringify({
         ...request,
+        keep_alive: request.keep_alive !== undefined ? request.keep_alive : this.keepAlive,
         stream: false,
       }),
     });
@@ -204,6 +208,7 @@ export class OllamaService {
       method: "POST",
       body: JSON.stringify({
         ...request,
+        keep_alive: request.keep_alive !== undefined ? request.keep_alive : this.keepAlive,
         stream: false,
       }),
     });

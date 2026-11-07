@@ -30,6 +30,7 @@ export const generateRequestSchema = z.object({
   context: z.array(z.number()).max(10000).optional(),
   options: generationOptionsSchema.optional(),
   stream: z.literal(false).default(false),
+  keep_alive: z.union([z.string(), z.number()]).optional(),
 });
 
 export const chatMessageSchema = z.object({
@@ -55,6 +56,7 @@ export const chatRequestSchema = z.object({
     .max(100, "Limite de 100 mensagens por requisição excedido"),
   options: generationOptionsSchema.optional(),
   stream: z.literal(false).default(false),
+  keep_alive: z.union([z.string(), z.number()]).optional(),
 });
 
 export type GenerateRequestInput = z.infer<typeof generateRequestSchema>;

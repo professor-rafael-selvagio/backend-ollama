@@ -36,7 +36,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-ollama_secure_password_2026}@postgres:5432/${POSTGRES_DB:-ollama_db}
       - JWT_SECRET=${JWT_SECRET:-ollama_jwt_super_secret_key_change_me_in_prod}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
-      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120000}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600000}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
       - ALLOWED_MODELS=${ALLOWED_MODELS:-}
       - REQUIRE_AUTH=${REQUIRE_AUTH:-false}

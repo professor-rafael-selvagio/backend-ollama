@@ -17,9 +17,12 @@ const envSchema = z.object({
     .transform((val) => val.trim().replace(/\/$/, "")),
   OLLAMA_TIMEOUT: z
     .string()
-    .default("120000")
+    .default("600000")
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().positive()),
+  OLLAMA_KEEP_ALIVE: z
+    .string()
+    .default("30m"),
   ALLOWED_ORIGINS: z
     .string()
     .default("*")

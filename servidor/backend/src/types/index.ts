@@ -40,6 +40,7 @@ export interface OllamaGenerateRequest {
   context?: number[];
   options?: OllamaGenerationOptions;
   stream?: boolean;
+  keep_alive?: string | number;
 }
 
 export interface OllamaGenerateResponse {
@@ -66,6 +67,7 @@ export interface OllamaChatRequest {
   messages: OllamaChatMessage[];
   options?: OllamaGenerationOptions;
   stream?: boolean;
+  keep_alive?: string | number;
 }
 
 export interface OllamaChatResponse {
