@@ -17,7 +17,7 @@
 - **Frontend (React + Tailwind CSS + Lucide Icons)**:
   - Página dedicada `AdminDashboard.tsx` com KPIs (tokens de entrada/saída, usuários online, etc.), busca/filtro e ações de permissão.
   - Botão no `Sidebar.tsx` visível apenas para administradores para alternar entre Chat e Painel Admin.
-  - Créditos discretos no rodapé da `LoginPage.tsx` e abaixo da área de digitação em `ChatInput.tsx` / `ChatArea.tsx`: *"Desenvolvido pelo Prof. Esp. Rafael Selvagio, utilizando IA."*
+  - Créditos discretos no rodapé da `LoginPage.tsx` e abaixo da área de digitação em `ChatInput.tsx` / `ChatArea.tsx`: *"Desenvolvido pelo Prof. Esp. Rafael de Sena Selvagio, utilizando IA."*
 
 **Tech Stack:** TypeScript, Node.js, Express, PostgreSQL, Vitest, React, Tailwind CSS, Lucide React.
 
@@ -98,7 +98,7 @@
 
 ### Task 7: Crédito Discreto nas Telas de Login e Chat
 - [x] Atualizar `servidor/frontend/src/pages/LoginPage.tsx` e `RegisterPage.tsx`:
-  - Adicionar no rodapé texto discreto: *"Desenvolvido pelo Prof. Esp. Rafael Selvagio, utilizando IA."*
+  - Adicionar no rodapé texto discreto: *"Desenvolvido pelo Prof. Esp. Rafael de Sena Selvagio, utilizando IA."*
 - [x] Atualizar `servidor/frontend/src/components/ChatInput.tsx` (ou rodapé do chat):
   - Inserir linha sutil no rodapé inferior com a mesma frase institucional.
 

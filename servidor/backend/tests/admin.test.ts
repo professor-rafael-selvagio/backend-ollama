@@ -94,7 +94,7 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       const reg = await request(app).post("/api/auth/register").send({
         email: SUPERADMIN_EMAIL,
         password: "senhaSegura123",
-        name: "Prof. Rafael Selvagio",
+        name: "Prof. Rafael de Sena Selvagio",
         user_type: "funcionario",
         nif: "NIF0001",
       });
@@ -122,7 +122,7 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       const adminReg = await request(app).post("/api/auth/register").send({
         email: SUPERADMIN_EMAIL,
         password: "senhaSegura123",
-        name: "Prof. Rafael Selvagio",
+        name: "Prof. Rafael de Sena Selvagio",
         user_type: "funcionario",
         nif: "NIF-ADMIN",
       });
@@ -349,7 +349,7 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       const adminReg = await request(app).post("/api/auth/register").send({
         email: SUPERADMIN_EMAIL,
         password: "senhaSegura123",
-        name: "Prof. Rafael Selvagio",
+        name: "Prof. Rafael de Sena Selvagio",
         user_type: "funcionario",
         nif: "1085920",
       });
@@ -412,7 +412,7 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       const adminReg = await request(app).post("/api/auth/register").send({
         email: SUPERADMIN_EMAIL,
         password: "senhaSegura123",
-        name: "Prof. Rafael Selvagio",
+        name: "Prof. Rafael de Sena Selvagio",
         user_type: "funcionario",
         nif: "1085920",
       });
@@ -434,7 +434,7 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       const adminReg = await request(app).post("/api/auth/register").send({
         email: SUPERADMIN_EMAIL,
         password: "senhaSegura123",
-        name: "Prof. Rafael Selvagio",
+        name: "Prof. Rafael de Sena Selvagio",
         user_type: "funcionario",
         nif: "1085920",
       });
@@ -470,7 +470,7 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       const adminReg = await request(app).post("/api/auth/register").send({
         email: SUPERADMIN_EMAIL,
         password: "senhaSegura123",
-        name: "Prof. Rafael Selvagio",
+        name: "Prof. Rafael de Sena Selvagio",
         user_type: "funcionario",
         nif: "1085920",
       });
