@@ -32,6 +32,7 @@ import {
   Unlock,
   TrendingUp,
   BarChart2,
+  Database,
   X,
 } from "lucide-react";
 import {
@@ -39,12 +40,14 @@ import {
   AdminMetrics,
   AdminUser,
   AuditLogEntry,
+  SystemResourceHistoryEntry,
   SystemResources,
   TokenAnalytics,
 } from "../types";
 import { api } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { ResourceLineChart, ChartDataPoint } from "../components/ResourceLineChart";
 
 interface AdminDashboardProps {
   onBackToChat: () => void;
@@ -65,6 +68,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
 
   const [systemResources, setSystemResources] = useState<SystemResources | null>(null);
   const [isLoadingResources, setIsLoadingResources] = useState(false);
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyPeriod, setHistoryPeriod] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("5m");
+  const [fullHistory, setFullHistory] = useState<SystemResourceHistoryEntry[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const [tokenAnalytics, setTokenAnalytics] = useState<TokenAnalytics | null>(null);
   const [isLoadingTokens, setIsLoadingTokens] = useState(false);
@@ -237,35 +245,144 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
     });
   };
 
-  const loadSystemResources = async (silent = false) => {
-    if (!silent) setIsLoadingResources(true);
+  const initializeResourcesWithHistory = async () => {
+    setIsLoadingResources(true);
     try {
-      const res = await api.admin.getSystemResources();
-      setSystemResources(res);
+      // 1. Busca as últimas 5 medições (de 5 em 5 minutos) gravadas no banco de dados
+      const pastMeasures = await api.admin.getSystemResourceHistory(5);
+      const initialPoints: ChartDataPoint[] = pastMeasures.map((entry) => ({
+        timeLabel: new Date(entry.created_at).toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        cpu: entry.cpu_usage_percent,
+        memory: entry.memory_usage_percent,
+        disk: entry.disk_usage_percent,
+        rawDate: entry.created_at,
+        isInitial: true,
+      }));
+
+      // 2. Busca o estado atual ao vivo do servidor
+      const current = await api.admin.getSystemResources();
+      setSystemResources(current);
+
+      const livePoint: ChartDataPoint = {
+        timeLabel: new Date(current.timestamp).toLocaleTimeString("pt-BR"),
+        cpu: current.cpu.usage_percent,
+        memory: current.memory.usage_percent,
+        disk: current.disk.usage_percent,
+        rawDate: current.timestamp,
+        isInitial: false,
+      };
+
+      setChartData([...initialPoints, livePoint]);
     } catch (err: unknown) {
-      if (!silent) {
-        setNotification({
-          type: "error",
-          message:
-            err instanceof Error
-              ? err.message
-              : "Erro ao carregar recursos do servidor.",
-        });
-      }
+      setNotification({
+        type: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Erro ao carregar recursos do servidor.",
+      });
     } finally {
       setIsLoadingResources(false);
     }
   };
 
+  const pollSystemResources = async () => {
+    try {
+      const res = await api.admin.getSystemResources();
+      setSystemResources(res);
+
+      const newPoint: ChartDataPoint = {
+        timeLabel: new Date(res.timestamp).toLocaleTimeString("pt-BR"),
+        cpu: res.cpu.usage_percent,
+        memory: res.memory.usage_percent,
+        disk: res.disk.usage_percent,
+        rawDate: res.timestamp,
+        isInitial: false,
+      };
+
+      setChartData((prev) => {
+        const updated = [...prev, newPoint];
+        // Mantém as medições iniciais e até 35 pontos no gráfico
+        if (updated.length > 35) {
+          return updated.slice(updated.length - 35);
+        }
+        return updated;
+      });
+    } catch {
+      // Falhas pontuais no polling de 10s não bloqueiam a tela
+    }
+  };
+
   useEffect(() => {
     if (isAdmin && activeTab === "resources") {
-      loadSystemResources();
+      initializeResourcesWithHistory();
+      // Lê as informações a cada 10 segundos
       const interval = setInterval(() => {
-        loadSystemResources(true);
-      }, 4000);
+        pollSystemResources();
+      }, 10000);
       return () => clearInterval(interval);
     }
   }, [isAdmin, activeTab]);
+
+  const loadFullHistory = async (period: "5m" | "1h" | "6h" | "24h" | "7d") => {
+    setHistoryPeriod(period);
+    setIsLoadingHistory(true);
+    try {
+      let limit = 50;
+      let hours: number | undefined = undefined;
+      if (period === "5m") {
+        limit = 5;
+      } else if (period === "1h") {
+        hours = 1;
+        limit = 60;
+      } else if (period === "6h") {
+        hours = 6;
+        limit = 200;
+      } else if (period === "24h") {
+        hours = 24;
+        limit = 500;
+      } else if (period === "7d") {
+        hours = 168;
+        limit = 1000;
+      }
+      const data = await api.admin.getSystemResourceHistory(limit, hours);
+      setFullHistory(data);
+    } catch (err: unknown) {
+      setNotification({
+        type: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Erro ao carregar histórico de recursos do banco.",
+      });
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleOpenHistoryModal = () => {
+    setIsHistoryModalOpen(true);
+    loadFullHistory(historyPeriod);
+  };
+
+  const historyChartData: ChartDataPoint[] = useMemo(() => {
+    return fullHistory.map((item) => ({
+      timeLabel: new Date(item.created_at).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        day: historyPeriod === "24h" || historyPeriod === "7d" ? "2-digit" : undefined,
+        month: historyPeriod === "7d" ? "2-digit" : undefined,
+      }),
+      cpu: item.cpu_usage_percent,
+      memory: item.memory_usage_percent,
+      disk: item.disk_usage_percent,
+      rawDate: item.created_at,
+      isInitial: true,
+    }));
+  }, [fullHistory, historyPeriod]);
 
   const handleOpenTokenAnalytics = async () => {
     setIsTokenModalOpen(true);
@@ -1166,16 +1283,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
                   Consumo de processamento (CPU), memória RAM e armazenamento no host em tempo real.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
                   <span className="relative flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                   </span>
-                  <span className="text-emerald-400 font-medium">Tempo Real (4s)</span>
+                  <span className="text-emerald-400 font-medium">Tempo Real (10s)</span>
                 </div>
                 <button
-                  onClick={() => loadSystemResources()}
+                  onClick={handleOpenHistoryModal}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-brand-600/20 hover:bg-brand-600/30 text-brand-300 border border-brand-500/30 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Acessar histórico de leituras salvas a cada 5 minutos no banco de dados"
+                >
+                  <Database size={13} />
+                  <span>Histórico do Banco (5 min)</span>
+                </button>
+                <button
+                  onClick={() => initializeResourcesWithHistory()}
                   disabled={isLoadingResources}
                   className="px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
                 >
@@ -1428,6 +1553,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
                     </div>
                   </div>
                 </div>
+
+                {/* Gráfico de Linha em Tempo Real (Leitura a cada 10s) */}
+                <ResourceLineChart
+                  data={chartData}
+                  title="Gráfico de Linha em Tempo Real (Leitura a cada 10s)"
+                  subtitle="Iniciado com as últimas 5 medições de 5 minutos do banco e atualizado continuamente a cada 10 segundos."
+                />
               </div>
             ) : null}
           </div>
@@ -1616,6 +1748,191 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToChat }) 
                 </div>
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: HISTÓRICO COMPLETO DE RECURSOS PERSISTIDO NO BANCO (5 EM 5 MIN) */}
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-4xl rounded-2xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            {/* Topo do Modal */}
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center">
+                  <Database size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">
+                    Histórico Persistido dos Recursos do Servidor
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Acesso aos dados gravados no banco de dados a cada 5 minutos
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Seletor de Período do Histórico */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-slate-400 font-medium mr-1">Filtrar período:</span>
+                {(
+                  [
+                    { key: "5m", label: "5 Medições (~25 min)" },
+                    { key: "1h", label: "Última 1 hora" },
+                    { key: "6h", label: "Últimas 6 horas" },
+                    { key: "24h", label: "Últimas 24 horas" },
+                    { key: "7d", label: "Últimos 7 dias" },
+                  ] as const
+                ).map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => loadFullHistory(p.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      historyPeriod === p.key
+                        ? "bg-brand-600 text-white shadow-sm"
+                        : "bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => loadFullHistory(historyPeriod)}
+                disabled={isLoadingHistory}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+              >
+                <RefreshCw size={12} className={isLoadingHistory ? "animate-spin" : ""} />
+                Recarregar
+              </button>
+            </div>
+
+            {isLoadingHistory ? (
+              <div className="py-20 text-center text-slate-400 flex flex-col items-center gap-2">
+                <RefreshCw size={28} className="animate-spin text-brand-400" />
+                <p className="text-xs">Carregando medições históricas do banco...</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Métricas Resumidas do Período */}
+                {fullHistory.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-slate-950/70 border border-slate-800/80 p-3 rounded-xl">
+                      <span className="text-slate-400 block text-[11px]">Medições no Período</span>
+                      <span className="text-base font-bold text-white font-mono">
+                        {fullHistory.length} registros
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/70 border border-slate-800/80 p-3 rounded-xl">
+                      <span className="text-slate-400 block text-[11px]">Média de CPU</span>
+                      <span className="text-base font-bold text-sky-400 font-mono">
+                        {(
+                          fullHistory.reduce((acc, h) => acc + h.cpu_usage_percent, 0) /
+                          fullHistory.length
+                        ).toFixed(1)}
+                        %
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/70 border border-slate-800/80 p-3 rounded-xl">
+                      <span className="text-slate-400 block text-[11px]">Pico de CPU</span>
+                      <span className="text-base font-bold text-red-400 font-mono">
+                        {Math.max(...fullHistory.map((h) => h.cpu_usage_percent))}%
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/70 border border-slate-800/80 p-3 rounded-xl">
+                      <span className="text-slate-400 block text-[11px]">Média de Memória</span>
+                      <span className="text-base font-bold text-purple-400 font-mono">
+                        {(
+                          fullHistory.reduce((acc, h) => acc + h.memory_usage_percent, 0) /
+                          fullHistory.length
+                        ).toFixed(1)}
+                        %
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Gráfico de Linha do Histórico */}
+                <ResourceLineChart
+                  data={historyChartData}
+                  title={`Gráfico Histórico (${fullHistory.length} medições registradas)`}
+                  subtitle="Evolução de processamento, memória RAM e disco gravados pelo coletor a cada 5 minutos."
+                />
+
+                {/* Tabela com Todos os Registros Históricos */}
+                <div className="space-y-3">
+                  <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span>Lista de Registros no Banco ({fullHistory.length})</span>
+                    <span className="text-slate-500 font-normal normal-case">
+                      Ordem cronológica mais recente no topo
+                    </span>
+                  </h3>
+
+                  {fullHistory.length === 0 ? (
+                    <div className="text-center py-10 bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-400 text-xs">
+                      Nenhuma medição encontrada para o período selecionado.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-800 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 text-[11px] border-b border-slate-800 sticky top-0 z-10">
+                          <tr>
+                            <th className="py-2.5 px-3">Data e Hora</th>
+                            <th className="py-2.5 px-3 text-sky-400">CPU (%)</th>
+                            <th className="py-2.5 px-3 text-purple-400">Memória RAM (%)</th>
+                            <th className="py-2.5 px-3 text-purple-300">RAM (Usada / Total)</th>
+                            <th className="py-2.5 px-3 text-amber-400">Disco (%)</th>
+                            <th className="py-2.5 px-3 text-right">Uptime</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                          {[...fullHistory].reverse().map((entry) => (
+                            <tr key={entry.id} className="hover:bg-slate-800/30">
+                              <td className="py-2.5 px-3 text-slate-300">
+                                {new Date(entry.created_at).toLocaleString("pt-BR")}
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-sky-300">
+                                {entry.cpu_usage_percent}%
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-purple-300">
+                                {entry.memory_usage_percent}%
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-400 text-[10px]">
+                                {entry.memory_used_bytes && entry.memory_total_bytes
+                                  ? `${formatBytesGB(entry.memory_used_bytes)} / ${formatBytesGB(
+                                      entry.memory_total_bytes
+                                    )}`
+                                  : "-"}
+                              </td>
+                              <td className="py-2.5 px-3 font-bold text-amber-300">
+                                {entry.disk_usage_percent}%
+                              </td>
+                              <td className="py-2.5 px-3 text-right text-slate-400">
+                                {formatUptime(entry.uptime_seconds)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ import { app } from "./app";
 import { env } from "./config/env";
 import { logger } from "./utils/logger";
 import { getDbPool, initializeDatabase } from "./config/database";
+import { startMetricsCollector, stopMetricsCollector } from "./services/metrics-collector.service";
 
 let server: ReturnType<typeof app.listen>;
 
@@ -24,6 +25,9 @@ async function start() {
       allowedModels: env.ALLOWED_MODELS.length > 0 ? env.ALLOWED_MODELS : "TODOS (irrestrito)",
       authRequired: env.REQUIRE_AUTH,
     });
+
+    // Inicia a persistência automática dos recursos do servidor a cada 5 minutos
+    startMetricsCollector();
   });
 }
 
@@ -35,6 +39,8 @@ start().catch((err) => {
 // Tratamento de encerramento gracioso (Graceful Shutdown)
 function handleShutdown(signal: string) {
   logger.info(`Sinal de encerramento recebido (${signal}). Finalizando conexões pendentes...`);
+
+  stopMetricsCollector();
 
   server.close(() => {
     logger.info("Servidor HTTP encerrado com sucesso.");

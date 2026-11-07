@@ -225,6 +225,30 @@ export class AdminController {
   };
 
   /**
+   * GET /api/admin/system-resources/history
+   * Retorna o histórico de leituras de recursos do servidor persistidas no banco
+   */
+  public getSystemResourcesHistory = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const limit = req.query.limit ? Math.max(1, Math.min(1000, Number(req.query.limit))) : 5;
+      const hours = req.query.hours ? Number(req.query.hours) : undefined;
+      const history = await this.getService().getSystemResourceHistory(limit, hours);
+      res.status(200).json({
+        status: "success",
+        data: {
+          history,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /**
    * GET /api/admin/tokens/analytics
    * Retorna análise de consumo diário de tokens (entrada vs saída) e pico de consumo
    */

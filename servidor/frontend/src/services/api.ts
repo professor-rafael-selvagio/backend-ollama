@@ -9,6 +9,7 @@ import {
   OllamaModel,
   Project,
   Session,
+  SystemResourceHistoryEntry,
   SystemResources,
   TokenAnalytics,
   User,
@@ -198,6 +199,18 @@ class ApiService {
         "/api/admin/system-resources"
       );
       return res.data;
+    },
+    getSystemResourceHistory: async (
+      limit = 5,
+      hours?: number
+    ): Promise<SystemResourceHistoryEntry[]> => {
+      let query = `?limit=${limit}`;
+      if (hours) query += `&hours=${hours}`;
+      const res = await this.request<{
+        status: string;
+        data: { history: SystemResourceHistoryEntry[] };
+      }>(`/api/admin/system-resources/history${query}`);
+      return res.data.history || [];
     },
     getTokenAnalytics: async (): Promise<TokenAnalytics> => {
       const res = await this.request<{ status: string; data: TokenAnalytics }>(

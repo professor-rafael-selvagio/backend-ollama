@@ -1,5 +1,6 @@
 import os from "os";
 import fs from "fs/promises";
+import crypto from "crypto";
 import { Pool } from "pg";
 import { getDbPool } from "../config/database";
 import { env } from "../config/env";
@@ -9,6 +10,7 @@ import {
   AdminUserSummary,
   AuditLogEntry,
   DatabaseMessage,
+  SystemResourceHistoryEntry,
   SystemResourcesResponse,
   TokenAnalyticsResponse,
   TokenDailyUsage,
@@ -106,6 +108,8 @@ export interface IAdminService {
   ): Promise<{ success: boolean; message: string }>;
   getAuditLogs(limit?: number, offset?: number): Promise<AuditLogEntry[]>;
   getSystemResources(): Promise<SystemResourcesResponse>;
+  saveSystemResourceMetric(data?: SystemResourcesResponse): Promise<SystemResourceHistoryEntry>;
+  getSystemResourceHistory(limit?: number, hours?: number): Promise<SystemResourceHistoryEntry[]>;
   getTokenAnalytics(): Promise<TokenAnalyticsResponse>;
 }
 
@@ -325,6 +329,111 @@ export class PostgresAdminService implements IAdminService {
     return collectSystemResources();
   }
 
+  public async saveSystemResourceMetric(
+    data?: SystemResourcesResponse
+  ): Promise<SystemResourceHistoryEntry> {
+    const res = data || (await collectSystemResources());
+    const query = `
+      INSERT INTO public.server_metrics_history (
+        cpu_usage_percent,
+        cpu_cores,
+        memory_total_bytes,
+        memory_used_bytes,
+        memory_usage_percent,
+        disk_total_bytes,
+        disk_used_bytes,
+        disk_usage_percent,
+        uptime_seconds,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING 
+        id,
+        cpu_usage_percent::float as cpu_usage_percent,
+        cpu_cores,
+        memory_total_bytes::text as memory_total_bytes,
+        memory_used_bytes::text as memory_used_bytes,
+        memory_usage_percent::float as memory_usage_percent,
+        disk_total_bytes::text as disk_total_bytes,
+        disk_used_bytes::text as disk_used_bytes,
+        disk_usage_percent::float as disk_usage_percent,
+        uptime_seconds::text as uptime_seconds,
+        created_at
+    `;
+    const values = [
+      res.cpu.usage_percent,
+      res.cpu.cores,
+      res.memory.total_bytes,
+      res.memory.used_bytes,
+      res.memory.usage_percent,
+      res.disk.total_bytes,
+      res.disk.used_bytes,
+      res.disk.usage_percent,
+      res.uptime_seconds,
+      res.timestamp ? new Date(res.timestamp) : new Date(),
+    ];
+    const { rows } = await this.pool.query(query, values);
+    const row = rows[0];
+    return {
+      id: row.id,
+      cpu_usage_percent: Number(row.cpu_usage_percent),
+      cpu_cores: Number(row.cpu_cores),
+      memory_total_bytes: Number(row.memory_total_bytes),
+      memory_used_bytes: Number(row.memory_used_bytes),
+      memory_usage_percent: Number(row.memory_usage_percent),
+      disk_total_bytes: Number(row.disk_total_bytes),
+      disk_used_bytes: Number(row.disk_used_bytes),
+      disk_usage_percent: Number(row.disk_usage_percent),
+      uptime_seconds: Number(row.uptime_seconds),
+      created_at: new Date(row.created_at).toISOString(),
+    };
+  }
+
+  public async getSystemResourceHistory(
+    limit = 5,
+    hours?: number
+  ): Promise<SystemResourceHistoryEntry[]> {
+    const safeLimit = Math.max(1, Math.min(1000, limit));
+    let query = `
+      SELECT 
+        id,
+        cpu_usage_percent::float as cpu_usage_percent,
+        cpu_cores,
+        memory_total_bytes::text as memory_total_bytes,
+        memory_used_bytes::text as memory_used_bytes,
+        memory_usage_percent::float as memory_usage_percent,
+        disk_total_bytes::text as disk_total_bytes,
+        disk_used_bytes::text as disk_used_bytes,
+        disk_usage_percent::float as disk_usage_percent,
+        uptime_seconds::text as uptime_seconds,
+        created_at
+      FROM public.server_metrics_history
+    `;
+    const params: any[] = [];
+    if (hours && hours > 0) {
+      params.push(hours);
+      query += ` WHERE created_at >= NOW() - ($${params.length} || ' hours')::interval`;
+    }
+    params.push(safeLimit);
+    query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+
+    const { rows } = await this.pool.query(query, params);
+    return rows
+      .map((row) => ({
+        id: row.id,
+        cpu_usage_percent: Number(row.cpu_usage_percent),
+        cpu_cores: Number(row.cpu_cores),
+        memory_total_bytes: Number(row.memory_total_bytes),
+        memory_used_bytes: Number(row.memory_used_bytes),
+        memory_usage_percent: Number(row.memory_usage_percent),
+        disk_total_bytes: Number(row.disk_total_bytes),
+        disk_used_bytes: Number(row.disk_used_bytes),
+        disk_usage_percent: Number(row.disk_usage_percent),
+        uptime_seconds: Number(row.uptime_seconds),
+        created_at: new Date(row.created_at).toISOString(),
+      }))
+      .reverse();
+  }
+
   public async getTokenAnalytics(): Promise<TokenAnalyticsResponse> {
     const res = await this.pool.query(
       `SELECT 
@@ -490,9 +599,31 @@ export class PostgresAdminService implements IAdminService {
  */
 export class InMemoryAdminService implements IAdminService {
   private inMemoryAuth: InMemoryAuthService;
+  private serverMetricsHistory: SystemResourceHistoryEntry[] = [];
 
   constructor(authService: InMemoryAuthService) {
     this.inMemoryAuth = authService;
+    this.seedInitialMetrics();
+  }
+
+  private seedInitialMetrics(): void {
+    const now = Date.now();
+    for (let i = 4; i >= 0; i--) {
+      const timestamp = new Date(now - i * 5 * 60 * 1000).toISOString();
+      this.serverMetricsHistory.push({
+        id: crypto.randomUUID(),
+        cpu_usage_percent: Math.min(100, Math.max(5, 15 + Math.floor(Math.sin(i) * 10) + (i % 3) * 5)),
+        cpu_cores: 4,
+        memory_total_bytes: 16 * 1024 * 1024 * 1024,
+        memory_used_bytes: (6 + (i % 2)) * 1024 * 1024 * 1024,
+        memory_usage_percent: 38 + (i % 4) * 3,
+        disk_total_bytes: 256 * 1024 * 1024 * 1024,
+        disk_used_bytes: 64 * 1024 * 1024 * 1024,
+        disk_usage_percent: 25,
+        uptime_seconds: 86400 - i * 300,
+        created_at: timestamp,
+      });
+    }
   }
 
   public async getMetrics(): Promise<AdminMetricsResponse> {
@@ -644,6 +775,43 @@ export class InMemoryAdminService implements IAdminService {
 
   public async getSystemResources(): Promise<SystemResourcesResponse> {
     return collectSystemResources();
+  }
+
+  public async saveSystemResourceMetric(
+    data?: SystemResourcesResponse
+  ): Promise<SystemResourceHistoryEntry> {
+    const res = data || (await collectSystemResources());
+    const entry: SystemResourceHistoryEntry = {
+      id: crypto.randomUUID(),
+      cpu_usage_percent: res.cpu.usage_percent,
+      cpu_cores: res.cpu.cores,
+      memory_total_bytes: res.memory.total_bytes,
+      memory_used_bytes: res.memory.used_bytes,
+      memory_usage_percent: res.memory.usage_percent,
+      disk_total_bytes: res.disk.total_bytes,
+      disk_used_bytes: res.disk.used_bytes,
+      disk_usage_percent: res.disk.usage_percent,
+      uptime_seconds: res.uptime_seconds,
+      created_at: res.timestamp || new Date().toISOString(),
+    };
+    this.serverMetricsHistory.push(entry);
+    if (this.serverMetricsHistory.length > 1000) {
+      this.serverMetricsHistory.shift();
+    }
+    return entry;
+  }
+
+  public async getSystemResourceHistory(
+    limit = 5,
+    hours?: number
+  ): Promise<SystemResourceHistoryEntry[]> {
+    let list = [...this.serverMetricsHistory];
+    if (hours && hours > 0) {
+      const cutoff = Date.now() - hours * 60 * 60 * 1000;
+      list = list.filter((item) => new Date(item.created_at).getTime() >= cutoff);
+    }
+    const safeLimit = Math.max(1, Math.min(1000, limit));
+    return list.slice(-safeLimit);
   }
 
   public async getTokenAnalytics(): Promise<TokenAnalyticsResponse> {

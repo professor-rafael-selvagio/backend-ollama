@@ -491,4 +491,51 @@ describe("Módulo Administrativo, Lixeira e Auditoria (/api/admin)", () => {
       expect(Array.isArray(res.body.data.daily_usage)).toBe(true);
     });
   });
+
+  describe("GET /api/admin/system-resources/history (Histórico Persistido a Cada 5 Minutos)", () => {
+    it("deve retornar status 200 com array de medições históricas de recursos", async () => {
+      const adminReg = await request(app).post("/api/auth/register").send({
+        email: SUPERADMIN_EMAIL,
+        password: "senhaSegura123",
+        name: "Prof. Rafael de Sena Selvagio",
+        user_type: "funcionario",
+        nif: "1085920",
+      });
+      const adminToken = adminReg.body.data.session.access_token;
+
+      const res = await request(app)
+        .get("/api/admin/system-resources/history?limit=5")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("status", "success");
+      expect(Array.isArray(res.body.data.history)).toBe(true);
+      expect(res.body.data.history.length).toBeGreaterThanOrEqual(1);
+
+      const firstItem = res.body.data.history[0];
+      expect(firstItem).toHaveProperty("id");
+      expect(firstItem).toHaveProperty("cpu_usage_percent");
+      expect(firstItem).toHaveProperty("memory_usage_percent");
+      expect(firstItem).toHaveProperty("disk_usage_percent");
+      expect(firstItem).toHaveProperty("created_at");
+    });
+
+    it("deve respeitar o parâmetro limit no histórico", async () => {
+      const adminReg = await request(app).post("/api/auth/register").send({
+        email: SUPERADMIN_EMAIL,
+        password: "senhaSegura123",
+        name: "Prof. Rafael de Sena Selvagio",
+        user_type: "funcionario",
+        nif: "1085920",
+      });
+      const adminToken = adminReg.body.data.session.access_token;
+
+      const res = await request(app)
+        .get("/api/admin/system-resources/history?limit=2")
+        .set("Authorization", `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.history.length).toBeLessThanOrEqual(2);
+    });
+  });
 });

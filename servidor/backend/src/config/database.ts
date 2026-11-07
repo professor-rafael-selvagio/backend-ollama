@@ -224,6 +224,22 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
         created_at timestamptz NOT NULL DEFAULT now()
     );
 
+    -- Tabela de Histórico de Métricas e Recursos do Servidor
+    CREATE TABLE IF NOT EXISTS public.server_metrics_history (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        cpu_usage_percent numeric NOT NULL,
+        cpu_cores integer NOT NULL,
+        memory_total_bytes bigint NOT NULL,
+        memory_used_bytes bigint NOT NULL,
+        memory_usage_percent numeric NOT NULL,
+        disk_total_bytes bigint NOT NULL,
+        disk_used_bytes bigint NOT NULL,
+        disk_usage_percent numeric NOT NULL,
+        uptime_seconds bigint NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_server_metrics_history_created_at ON public.server_metrics_history(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);

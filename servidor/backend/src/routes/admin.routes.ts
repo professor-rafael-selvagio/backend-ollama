@@ -32,5 +32,8 @@ adminRoutes.get("/audit-logs", defaultAdminController.getAuditLogs);
 // Monitoramento de recursos do servidor (CPU, memória, disco, uptime)
 adminRoutes.get("/system-resources", defaultAdminController.getSystemResources);
 
+// Histórico de medições de recursos gravadas a cada 5 minutos
+adminRoutes.get("/system-resources/history", defaultAdminController.getSystemResourcesHistory);
+
 // Análise detalhada de consumo de tokens (entrada vs saída e pico)
 adminRoutes.get("/tokens/analytics", defaultAdminController.getTokenAnalytics);

@@ -244,6 +244,20 @@ export interface SystemResourcesResponse {
   timestamp: string;
 }
 
+export interface SystemResourceHistoryEntry {
+  id: string;
+  cpu_usage_percent: number;
+  cpu_cores: number;
+  memory_total_bytes: number;
+  memory_used_bytes: number;
+  memory_usage_percent: number;
+  disk_total_bytes: number;
+  disk_used_bytes: number;
+  disk_usage_percent: number;
+  uptime_seconds: number;
+  created_at: string;
+}
+
 export interface TokenDailyUsage {
   date: string;
   prompt_tokens: number;
